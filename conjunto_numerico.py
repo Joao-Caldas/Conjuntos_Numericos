@@ -35,7 +35,10 @@ class ConjuntoNumerico:
     # ------------------------------------------------------------------ #
     #  Representação                                                       #
     # ------------------------------------------------------------------ #
-
+    
+    def esta_vazio(self) -> bool:
+        """Retorna True se o conjunto é vazio (∅)."""
+        return self.tamanho == 0
     def __repr__(self):
         return f"ConjuntoNumerico({self.elementos})"
 
@@ -166,29 +169,6 @@ class ConjuntoNumerico:
         contagem = Counter(self.elementos)
         freq_max = max(contagem.values())
         return [k for k, v in contagem.items() if v == freq_max]
-
-    # ------------------------------------------------------------------ #
-    #  Teoria dos números                                                  #
-    # ------------------------------------------------------------------ #
-
-    @staticmethod
-    def mdc(a: int, b: int) -> int:
-        """Máximo Divisor Comum entre a e b."""
-        return math.gcd(a, b)
-
-    @staticmethod
-    def mmc(a: int, b: int) -> int:
-        """Mínimo Múltiplo Comum entre a e b."""
-        return math.lcm(a, b)
-
-    def eh_primo(self, n: int) -> bool:
-        """Verifica se n é primo."""
-        if n < 2:
-            return False
-        for i in range(2, int(math.sqrt(n)) + 1):
-            if n % i == 0:
-                return False
-        return True
 
     def primos_do_conjunto(self) -> "ConjuntoNumerico":
         """Retorna um novo conjunto apenas com os primos do conjunto atual."""
