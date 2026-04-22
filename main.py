@@ -67,19 +67,6 @@ def exibir_conjuntos(conjuntos: list, x: int, y: int):
         print(f"  {nome:<6} {conj}")
 
 
-def exibir_resumos(conjuntos: list):
-    SEP = "─" * 52
-    print("\n" + "═" * 52)
-    print("   RESUMOS ESTATÍSTICOS")
-    print("═" * 52)
-    for nome, conj in conjuntos:
-        print(f"\n{SEP}")
-        print(f"  Conjunto {nome}")
-        print(SEP)
-        for linha in conj.resumo().splitlines():
-            print(f"  {linha}")
-
-
 def exibir_operacoes(conjuntos: list):
     if len(conjuntos) < 2:
         return
@@ -93,15 +80,62 @@ def exibir_operacoes(conjuntos: list):
         print(f"\n{SEP}")
         print(f"  {nA} = {A}")
         print(f"  {nB} = {B}")
-       # print(SEP)
-        #print(f"  {nA} ∪ {nB}                  = {A.uniao(B)}")
-        #print(f"  {nA} ∩ {nB}                  = {A.intersecao(B)}")
-        #print(f"  {nA} - {nB}                  = {A.diferenca(B)}")
-        #print(f"  {nB} - {nA}                  = {B.diferenca(A)}")
-        #print(f"  {nA} △ {nB}                  = {A.diferenca_simetrica(B)}")
-        #print(f"  {nA} ⊆ {nB}?                 = {A.subconjunto(B)}")
-       # print(f"  Disjuntos ({nA} ∩ {nB} = ∅)? = {A.disjunto(B)}")
 
+def verificar_contencao(ref: ConjuntoNumerico, conjuntos: list) -> None:
+    """
+    Verifica em quais conjuntos da lista o conjunto de referência está contido.
+ 
+    Parâmetros:
+      ref        — ConjuntoNumerico de referência
+      conjuntos  — lista de tuplas (nome, ConjuntoNumerico) geradas anteriormente
+ 
+    Exibe separadamente:
+      • Conjuntos que CONTÊM ref (ref ⊆ conj)
+      • Conjuntos que NÃO contêm ref
+    """
+    SEP = "─" * 52
+ 
+    contem     = []
+    nao_contem = []
+ 
+    for nome, conj in conjuntos:
+        if ref.subconjunto(conj):
+            contem.append((nome, conj))
+        else:
+            nao_contem.append((nome, conj))
+ 
+    # ── Cabeçalho ─────────────────────────────────────────────────────
+    print("\n" + "═" * 52)
+    print("   VERIFICAÇÃO DE CONTENÇÃO  (ref ⊆ conjunto?)")
+    print("═" * 52)
+    print(f"  Conjunto referência : {ref}")
+    print(f"  Total comparados    : {len(conjuntos)}")
+    print(f"  Contêm ref          : {len(contem)}")
+    print(f"  Não contêm ref      : {len(nao_contem)}")
+ 
+    # ── Contêm ────────────────────────────────────────────────────────
+    print(f"\n{SEP}")
+    print(f"  ✔  ref ⊆ conjunto  ({len(contem)})")
+    print(SEP)
+    if contem:
+        for nome, conj in contem:
+            print(f"  {nome}")
+            print(f"    ref      = {ref}")
+            print(f"    conjunto = {conj}")
+    else:
+        print("  Nenhum conjunto contém o de referência.")
+ 
+    # ── Não contêm ───────────────────────────────────────────────────
+    # print(f"\n{SEP}")
+    # print(f"  ✘  ref ⊄ conjunto  ({len(nao_contem)})")
+    # print(SEP)
+    # if nao_contem:
+    #     for nome, conj in nao_contem:
+    #         print(f"  {nome}")
+    #         print(f"    ref      = {ref}")
+    #         print(f"    conjunto = {conj}")
+    #else:
+        #print("  Todos os conjuntos contêm o de referência.")
 
 # ====================================================================== #
 #  Main                                                                   #
@@ -135,8 +169,24 @@ if __name__ == "__main__":
     conjuntos = gerar_conjuntos(n, x, y, tamanho)
 
     exibir_conjuntos(conjuntos, x, y)
-    #exibir_resumos(conjuntos)
-    #exibir_operacoes(conjuntos)
+
+    print(f"\n{SEP}")
+    print("  Intervalo [x, y]  —  cada conjunto terá (y - x) elementos")
+    print("\n Qual o intervalo do conjunto de intersecção?")
+    print(SEP)
+
+    x = ler_inteiro("  Início do intervalo (x): ")
+
+    while True: #transformar em função depois 
+        y = ler_inteiro("  Fim do intervalo   (y): ", minimo=x + 2)
+        tamanho = ler_inteiro("  tamanho do conjunto: ")
+        if y - x < 2:
+            print("  ✗ y deve ser pelo menos x + 2 para haver aleatoriedade.")
+        else:
+            break
+
+    conjunto_referencia = gerar_conjuntos(1, x, y, tamanho)
+    verificar_contencao(conjunto_referencia[0][1], conjuntos)
 
     print("\n\n" + "═" * 52)
     print("   PROGRAMA ENCERRADO")
