@@ -4,10 +4,6 @@ import string
 from conjunto_numerico import ConjuntoNumerico
 
 
-# ====================================================================== #
-#  Utilitário de entrada                                                  #
-# ====================================================================== #
-
 def ler_inteiro(mensagem: str, minimo: int = None, maximo: int = None) -> int:
     """Lê um inteiro do terminal com validação."""
     while True:
@@ -23,10 +19,6 @@ def ler_inteiro(mensagem: str, minimo: int = None, maximo: int = None) -> int:
         except ValueError:
             print("  ✗ Entrada inválida. Digite um número inteiro.")
 
-
-# ====================================================================== #
-#  Geração dos conjuntos                                                  #
-# ====================================================================== #
 
 def gerar_conjuntos(n: int, x: int, y: int, tamanho: int) -> list:
     """
@@ -50,19 +42,13 @@ def gerar_conjuntos(n: int, x: int, y: int, tamanho: int) -> list:
     return conjuntos
 
 
-# ====================================================================== #
-#  Exibição                                                               #
-# ====================================================================== #
-
 def exibir_conjuntos(conjuntos: list, x: int, y: int):
-    #SEP = "─" * 52
     print("\n" + "═" * 52)
     print("   CONJUNTOS GERADOS")
     print("═" * 52)
     print(f"  Intervalo: [{x}, {y}]   Tamanho: {y - x}")
-    #print(f"  {SEP}")
     print(f"  {'Nome':<6} Elementos")
-    #print(f"  {SEP}")
+
     for nome, conj in conjuntos:
         print(f"  {nome:<6} {conj}")
 
@@ -125,21 +111,6 @@ def verificar_contencao(ref: ConjuntoNumerico, conjuntos: list) -> None:
     else:
         print("  Nenhum conjunto contém o de referência.")
  
-    # ── Não contêm ───────────────────────────────────────────────────
-    # print(f"\n{SEP}")
-    # print(f"  ✘  ref ⊄ conjunto  ({len(nao_contem)})")
-    # print(SEP)
-    # if nao_contem:
-    #     for nome, conj in nao_contem:
-    #         print(f"  {nome}")
-    #         print(f"    ref      = {ref}")
-    #         print(f"    conjunto = {conj}")
-    #else:
-        #print("  Todos os conjuntos contêm o de referência.")
-
-# ====================================================================== #
-#  Main                                                                   #
-# ====================================================================== #
 
 if __name__ == "__main__":
     SEP = "─" * 52
