@@ -19,10 +19,6 @@ class ConjuntoNumerico:
         self.elementos = sorted(set(elementos))
         self._atualizar_atributos()
 
-    # ------------------------------------------------------------------ #
-    #  Atualização interna dos atributos derivados                         #
-    # ------------------------------------------------------------------ #
-
     def _atualizar_atributos(self):
         """Recalcula os atributos sempre que o conjunto é modificado."""
         self.tamanho    = len(self.elementos)
@@ -30,12 +26,8 @@ class ConjuntoNumerico:
         self.maximo     = max(self.elementos) if self.elementos else None
         self.range      = (self.maximo - self.minimo) if self.elementos else None
         self.soma       = sum(self.elementos)
-        self.quantidade = self.tamanho          # alias semântico
+        self.quantidade = self.tamanho          #alias semântico
 
-    # ------------------------------------------------------------------ #
-    #  Representação                                                       #
-    # ------------------------------------------------------------------ #
-    
     def esta_vazio(self) -> bool:
         """Retorna True se o conjunto é vazio (∅)."""
         return self.tamanho == 0
@@ -44,10 +36,6 @@ class ConjuntoNumerico:
 
     def __str__(self):
         return f"{{{', '.join(map(str, self.elementos))}}}"
-
-    # ------------------------------------------------------------------ #
-    #  Combinatória                                                        #
-    # ------------------------------------------------------------------ #
 
     @staticmethod
     def fatorial(n: int) -> int:
@@ -83,10 +71,6 @@ class ConjuntoNumerico:
     def combinacao_do_conjunto(self, r: int) -> int:
         """C(tamanho, r) usando o tamanho do próprio conjunto."""
         return self.combinacao(self.tamanho, r)
-
-    # ------------------------------------------------------------------ #
-    #  Operações de pertinência e conjuntos                                #
-    # ------------------------------------------------------------------ #
 
     def pertence(self, x: Union[int, float]) -> bool:
         """Verifica se x ∈ conjunto."""
@@ -128,10 +112,6 @@ class ConjuntoNumerico:
         """Retorna o complemento de A em relação ao conjunto universal U."""
         return universal.diferenca(self)
 
-    # ------------------------------------------------------------------ #
-    #  Estatística                                                         #
-    # ------------------------------------------------------------------ #
-
     def media(self) -> float:
         """Retorna a média aritmética dos elementos."""
         if not self.elementos:
@@ -170,8 +150,4 @@ class ConjuntoNumerico:
         freq_max = max(contagem.values())
         return [k for k, v in contagem.items() if v == freq_max]
 
-    def primos_do_conjunto(self) -> "ConjuntoNumerico":
-        """Retorna um novo conjunto apenas com os primos do conjunto atual."""
-        primos = [e for e in self.elementos if isinstance(e, int) and self.eh_primo(e)]
-        return ConjuntoNumerico(primos) if primos else ConjuntoNumerico([0])
 
