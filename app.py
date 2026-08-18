@@ -47,7 +47,8 @@ class App(tk.Tk):
         # Fila usada para trazer o resultado da thread de trabalho
         # de volta para a thread principal (única que pode tocar widgets).
         self._fila_resultado = queue.Queue()
-        self._conjuntos_filtrados = None  # conjuntos base da nova rodada
+        self._conjuntos_filtrados = None
+        self._contem_para_nova_rodada = []
 
         self._construir_ui()
 
@@ -115,6 +116,17 @@ class App(tk.Tk):
     def _construir_ui(self):
         container = ttk.Frame(self, padding=12)
         container.pack(fill="both", expand=True)
+
+        # ── Banner de nova rodada (escondido por padrão) ─────────────────
+        self.frame_nova_rodada = tk.Frame(container, bg="#2ecc71", pady=8)
+        self.lbl_nova_rodada = tk.Label(
+            self.frame_nova_rodada,
+            text="", bg="#2ecc71", fg="white",
+            font=("Helvetica", 11, "bold")
+        )
+        self.lbl_nova_rodada.pack()
+        # começa escondido
+        self.frame_nova_rodada.pack_forget()
 
         # ── Duas colunas: Conjuntos Base | Conjuntos Referência ─────────
         colunas = ttk.Frame(container)
@@ -305,41 +317,45 @@ class App(tk.Tk):
 
     def _iniciar_nova_rodada(self):
         """
-        Filtra os conjuntos base para apenas os que contêm alguma referência
-        e bloqueia o painel base para que o usuário só configure novas refs.
+        Esconde o painel base, exibe banner verde com os CBs filtrados
+        e aguarda o usuário configurar novas referências.
         """
-        self._conjuntos_filtrados = self._contem_para_nova_rodada
-        n = len(self._conjuntos_filtrados)
+        try:
+            self._conjuntos_filtrados = list(self._contem_para_nova_rodada)
+            n = len(self._conjuntos_filtrados)
 
-        # Bloqueia o painel base visualmente
-        self.painel_base.config(text=f"Conjuntos Base — {n} conjuntos filtrados da rodada anterior")
-        for child in self.painel_base.winfo_children():
-            try:
-                child.config(state="disabled")
-            except Exception:
-                pass
+            # Esconde painel base e mostra banner
+            self.painel_base.grid_remove()
+            nomes = ", ".join(nome for nome, _ in self._conjuntos_filtrados[:6])
+            if n > 6:
+                nomes += f" ... (+{n - 6})"
+            self.lbl_nova_rodada.config(
+                text=f"🔄 Nova rodada — {n} conjuntos base filtrados: {nomes}"
+            )
+            self.frame_nova_rodada.pack(fill="x", before=self.painel_ref.master, pady=(0, 6))
 
-        self.btn_nova_rodada.config(state="disabled")
-        self.btn_cancelar_rodada.config(state="normal")
-        self.lbl_status.config(text=f"Nova rodada: {n} conjuntos base filtrados. Configure as novas referências.")
-        self.txt_saida.delete("1.0", tk.END)
+            self.btn_nova_rodada.state(["disabled"])
+            self.btn_cancelar_rodada.state(["!disabled"])
+            self.lbl_status.config(
+                text=f"✔ {n} conjuntos filtrados. Configure as novas referências e execute."
+            )
+            self.txt_saida.delete("1.0", tk.END)
+
+        except Exception as e:
+            messagebox.showerror("Erro na nova rodada", str(e))
 
     def _cancelar_nova_rodada(self):
         """Restaura o painel base e volta ao modo normal."""
         self._conjuntos_filtrados = None
+        self._contem_para_nova_rodada = []
 
-        self.painel_base.config(text="Conjuntos Base")
-        for child in self.painel_base.winfo_children():
-            try:
-                child.config(state="normal")
-            except Exception:
-                pass
-        # Garante que os sub-painéis fiquem no estado correto
-        self._alternar_modo("base")
+        # Mostra painel base e esconde banner
+        self.frame_nova_rodada.pack_forget()
+        self.painel_base.grid()
 
-        self.btn_cancelar_rodada.config(state="disabled")
-        self.btn_nova_rodada.config(state="disabled",
-            text="🔄 Nova rodada com conjuntos contidos")
+        self.btn_cancelar_rodada.state(["disabled"])
+        self.btn_nova_rodada.state(["disabled"])
+        self.btn_nova_rodada.config(text="🔄 Nova rodada com conjuntos contidos")
         self.lbl_status.config(text="Pronto.")
 
     # ------------------------------------------------------------------ #
@@ -436,7 +452,7 @@ class App(tk.Tk):
             return
 
         self.txt_saida.delete("1.0", tk.END)
-        self.btn_executar.config(state="disabled")
+        self.btn_executar.state(["disabled"])
         self.lbl_status.config(text="Processando...")
 
         thread = threading.Thread(
@@ -511,7 +527,7 @@ class App(tk.Tk):
             self.txt_saida.insert(tk.END, f"\n  ✗ Erro durante a execução: {erro}\n")
         self.txt_saida.see(tk.END)
 
-        self.btn_executar.config(state="normal")
+        self.btn_executar.state(["!disabled"])
         self.lbl_status.config(text="Erro." if erro else "Concluído.")
 
         # Habilita nova rodada se houver conjuntos contidos
@@ -524,13 +540,11 @@ class App(tk.Tk):
                     self._contem_para_nova_rodada.append((nome, conj))
                     vistos.add(nome)
             n = len(self._contem_para_nova_rodada)
-            self.btn_nova_rodada.config(
-                state="normal",
-                text=f"🔄 Nova rodada com conjuntos contidos ({n})"
-            )
+            self.btn_nova_rodada.state(["!disabled"])
+            self.btn_nova_rodada.config(text=f"🔄 Nova rodada com conjuntos contidos ({n})")
         else:
-            self.btn_nova_rodada.config(state="disabled",
-                text="🔄 Nova rodada com conjuntos contidos")
+            self.btn_nova_rodada.state(["disabled"])
+            self.btn_nova_rodada.config(text="🔄 Nova rodada com conjuntos contidos")
 
     def _inserir_com_destaque(self, texto: str):
         """
