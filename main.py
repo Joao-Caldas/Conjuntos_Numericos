@@ -123,6 +123,21 @@ def exibir_conjuntos(conjuntos: list, x: int, y: int, tamanho: int):
 #  Verificação de contenção                                               #
 # ====================================================================== #
 
+def verificar_contencao_dados(refs: list, conjuntos: list) -> tuple:
+    """
+    Versão que RETORNA os dados em vez de imprimir (usada pelo Streamlit).
+    Retorna (contem, nao_contem) como listas de (i_ref, ref, nome, conj).
+    """
+    contem, nao_contem = [], []
+    for i, ref in enumerate(refs, start=1):
+        for nome, conj in conjuntos:
+            if ref.subconjunto(conj):
+                contem.append((i, ref, nome, conj))
+            else:
+                nao_contem.append((i, ref, nome, conj))
+    return contem, nao_contem
+
+
 def verificar_contencao(refs: list, conjuntos: list) -> None:
     """
     Verifica a contenção entre TODOS os conjuntos de referência e TODOS
@@ -171,17 +186,7 @@ def verificar_contencao(refs: list, conjuntos: list) -> None:
     else:
         print("  Nenhum par de contenção encontrado.")
 
-    # ── Não contêm ────────────────────────────────────────────────────
-    print(f"\n{SEP}")
-    print(f"  ✘  ref ⊄ conjunto  ({len(nao_contem)})")
-    print(SEP)
-    if nao_contem:
-        for n_par, (i_ref, ref, nome, conj) in enumerate(nao_contem, start=1):
-            print(f"  {n_par}. CR{i_ref} ⊄ {nome}")
-            print(f"    CR{i_ref} = {ref}")
-            print(f"    {nome}  = {conj}")
-    else:
-        print("  Todos os pares possuem contenção.")
+
 
 
 # ====================================================================== #

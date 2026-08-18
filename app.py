@@ -12,6 +12,7 @@ Requer apenas a biblioteca padrão do Python (tkinter já vem incluso).
 """
 
 import os
+import re
 import sys
 import random
 import queue
@@ -28,6 +29,7 @@ from main import (
     carregar_conjuntos_txt,
     exibir_conjuntos,
     verificar_contencao,
+    verificar_contencao_dados,
 )
 
 
@@ -45,8 +47,66 @@ class App(tk.Tk):
         # Fila usada para trazer o resultado da thread de trabalho
         # de volta para a thread principal (única que pode tocar widgets).
         self._fila_resultado = queue.Queue()
+        self._conjuntos_filtrados = None  # conjuntos base da nova rodada
 
         self._construir_ui()
+
+
+    # ------------------------------------------------------------------ #
+    #  Busca no resultado                                                 #
+    # ------------------------------------------------------------------ #
+
+    def _buscar(self, direcao: int = 1):
+        """
+        Destaca todas as ocorrências do termo no widget de saída.
+        direcao=1 avança, direcao=-1 recua.
+        """
+        termo = self.ent_busca.get()
+
+        # Limpa destaques anteriores
+        self.txt_saida.tag_remove("busca", "1.0", tk.END)
+        self.txt_saida.tag_remove("busca_atual", "1.0", tk.END)
+        self._ocorrencias_busca = []
+        self._idx_busca = -1
+
+        if not termo:
+            self.lbl_busca.config(text="")
+            return
+
+        # Encontra todas as ocorrências
+        inicio = "1.0"
+        while True:
+            pos = self.txt_saida.search(termo, inicio, nocase=True, stopindex=tk.END)
+            if not pos:
+                break
+            fim = f"{pos}+{len(termo)}c"
+            self.txt_saida.tag_add("busca", pos, fim)
+            self._ocorrencias_busca.append(pos)
+            inicio = fim
+
+        total = len(self._ocorrencias_busca)
+
+        if total == 0:
+            self.lbl_busca.config(text="Nenhum resultado.")
+            return
+
+        # Navega para a ocorrência na direção pedida
+        self._idx_busca = (self._idx_busca + direcao) % total
+        self._ir_para_ocorrencia()
+
+    def _ir_para_ocorrencia(self):
+        """Destaca e exibe a ocorrência atual."""
+        self.txt_saida.tag_remove("busca_atual", "1.0", tk.END)
+
+        pos = self._ocorrencias_busca[self._idx_busca]
+        termo = self.ent_busca.get()
+        fim = f"{pos}+{len(termo)}c"
+
+        self.txt_saida.tag_add("busca_atual", pos, fim)
+        self.txt_saida.see(pos)
+
+        total = len(self._ocorrencias_busca)
+        self.lbl_busca.config(text=f"{self._idx_busca + 1} / {total}")
 
     # ------------------------------------------------------------------ #
     #  Construção da interface                                            #
@@ -85,12 +145,47 @@ class App(tk.Tk):
         self.lbl_status = ttk.Label(barra_acoes, text="Pronto.", foreground="#555")
         self.lbl_status.pack(side="left", padx=12)
 
+        self.btn_nova_rodada = ttk.Button(
+            barra_acoes, text="🔄 Nova rodada com conjuntos contidos",
+            command=self._iniciar_nova_rodada, state="disabled"
+        )
+        self.btn_nova_rodada.pack(side="left", padx=(12, 0))
+
+        self.btn_cancelar_rodada = ttk.Button(
+            barra_acoes, text="✕ Cancelar nova rodada",
+            command=self._cancelar_nova_rodada, state="disabled"
+        )
+        self.btn_cancelar_rodada.pack(side="left", padx=(4, 0))
+
         # ── Área de saída ────────────────────────────────────────────────
         ttk.Label(container, text="Resultado:").pack(anchor="w")
         self.txt_saida = scrolledtext.ScrolledText(
-            container, wrap="word", font=("Consolas", 16), height=24
+            container, wrap="word", font=("Consolas", 10), height=24
         )
         self.txt_saida.pack(fill="both", expand=True, pady=(4, 0))
+        self.txt_saida.tag_config("busca", background="#ffe066")
+        self.txt_saida.tag_config("busca_atual", background="#ff9900")
+
+        # ── Barra de busca ───────────────────────────────────────────────
+        barra_busca = ttk.Frame(container)
+        barra_busca.pack(fill="x", pady=(6, 0))
+
+        ttk.Label(barra_busca, text="🔍 Buscar:").pack(side="left")
+        self.ent_busca = ttk.Entry(barra_busca, width=30)
+        self.ent_busca.pack(side="left", padx=(6, 4))
+        self.ent_busca.bind("<Return>", lambda e: self._buscar(direcao=1))
+        self.ent_busca.bind("<Shift-Return>", lambda e: self._buscar(direcao=-1))
+
+        ttk.Button(barra_busca, text="▲", width=3,
+                   command=lambda: self._buscar(direcao=-1)).pack(side="left", padx=2)
+        ttk.Button(barra_busca, text="▼", width=3,
+                   command=lambda: self._buscar(direcao=1)).pack(side="left", padx=2)
+
+        self.lbl_busca = ttk.Label(barra_busca, text="", foreground="#555")
+        self.lbl_busca.pack(side="left", padx=8)
+
+        self._ocorrencias_busca = []
+        self._idx_busca = -1
 
     def _criar_painel_conjunto(self, parent, titulo, prefixo, campo_extra=None):
         """
@@ -207,6 +302,46 @@ class App(tk.Tk):
             entry.delete(0, tk.END)
             entry.insert(0, caminho)
 
+
+    def _iniciar_nova_rodada(self):
+        """
+        Filtra os conjuntos base para apenas os que contêm alguma referência
+        e bloqueia o painel base para que o usuário só configure novas refs.
+        """
+        self._conjuntos_filtrados = self._contem_para_nova_rodada
+        n = len(self._conjuntos_filtrados)
+
+        # Bloqueia o painel base visualmente
+        self.painel_base.config(text=f"Conjuntos Base — {n} conjuntos filtrados da rodada anterior")
+        for child in self.painel_base.winfo_children():
+            try:
+                child.config(state="disabled")
+            except Exception:
+                pass
+
+        self.btn_nova_rodada.config(state="disabled")
+        self.btn_cancelar_rodada.config(state="normal")
+        self.lbl_status.config(text=f"Nova rodada: {n} conjuntos base filtrados. Configure as novas referências.")
+        self.txt_saida.delete("1.0", tk.END)
+
+    def _cancelar_nova_rodada(self):
+        """Restaura o painel base e volta ao modo normal."""
+        self._conjuntos_filtrados = None
+
+        self.painel_base.config(text="Conjuntos Base")
+        for child in self.painel_base.winfo_children():
+            try:
+                child.config(state="normal")
+            except Exception:
+                pass
+        # Garante que os sub-painéis fiquem no estado correto
+        self._alternar_modo("base")
+
+        self.btn_cancelar_rodada.config(state="disabled")
+        self.btn_nova_rodada.config(state="disabled",
+            text="🔄 Nova rodada com conjuntos contidos")
+        self.lbl_status.config(text="Pronto.")
+
     # ------------------------------------------------------------------ #
     #  Leitura e validação dos campos                                     #
     # ------------------------------------------------------------------ #
@@ -290,7 +425,11 @@ class App(tk.Tk):
     def _executar(self):
         # Valida os campos ANTES de travar a interface / abrir thread
         try:
-            conjuntos, x, y, tamanho = self._obter_conjuntos_base()
+            if self._conjuntos_filtrados is not None:
+                conjuntos = self._conjuntos_filtrados
+                x = y = tamanho = "filtrado"
+            else:
+                conjuntos, x, y, tamanho = self._obter_conjuntos_base()
             refs, xr_log, tamanho_ref_log = self._obter_conjuntos_referencia()
         except ValueError as e:
             messagebox.showerror("Entrada inválida", str(e))
@@ -322,6 +461,7 @@ class App(tk.Tk):
         stdout_original = sys.stdout
         sys.stdout = buffer
         erro = None
+        contem_dados = []
 
         try:
             exibir_conjuntos(conjuntos, x, y, tamanho)
@@ -332,6 +472,7 @@ class App(tk.Tk):
             else:
                 print(f"\n  {len(refs)} conjunto(s) de referência carregado(s) de arquivo.")
 
+            contem_dados, _ = verificar_contencao_dados(refs, conjuntos)
             verificar_contencao(refs, conjuntos)
 
             print("\n\n" + "═" * 52)
@@ -347,12 +488,11 @@ class App(tk.Tk):
 
         except Exception as e:
             erro = str(e)
+            contem_dados = []
 
         finally:
             sys.stdout = stdout_original
-            # Apenas entrega o resultado pronto pela fila — nenhuma
-            # interação direta com a interface acontece aqui.
-            self._fila_resultado.put((buffer.getvalue(), erro))
+            self._fila_resultado.put((buffer.getvalue(), erro, contem_dados))
 
     def _verificar_resultado(self):
         """
@@ -361,18 +501,80 @@ class App(tk.Tk):
         a interface com segurança.
         """
         try:
-            texto, erro = self._fila_resultado.get_nowait()
+            texto, erro, contem_dados = self._fila_resultado.get_nowait()
         except queue.Empty:
             self.after(100, self._verificar_resultado)
             return
 
-        self.txt_saida.insert(tk.END, texto)
+        self._inserir_com_destaque(texto)
         if erro:
             self.txt_saida.insert(tk.END, f"\n  ✗ Erro durante a execução: {erro}\n")
         self.txt_saida.see(tk.END)
 
         self.btn_executar.config(state="normal")
         self.lbl_status.config(text="Erro." if erro else "Concluído.")
+
+        # Habilita nova rodada se houver conjuntos contidos
+        if not erro and contem_dados:
+            # Extrai conjuntos base únicos que contêm alguma referência
+            vistos = set()
+            self._contem_para_nova_rodada = []
+            for _, _, nome, conj in contem_dados:
+                if nome not in vistos:
+                    self._contem_para_nova_rodada.append((nome, conj))
+                    vistos.add(nome)
+            n = len(self._contem_para_nova_rodada)
+            self.btn_nova_rodada.config(
+                state="normal",
+                text=f"🔄 Nova rodada com conjuntos contidos ({n})"
+            )
+        else:
+            self.btn_nova_rodada.config(state="disabled",
+                text="🔄 Nova rodada com conjuntos contidos")
+
+    def _inserir_com_destaque(self, texto: str):
+        """
+        Insere o texto na área de saída linha a linha.
+        Quando encontra um par CR / CB na seção de contenção,
+        pinta de laranja os números do CB que coincidem com o CR.
+        """
+        self.txt_saida.tag_config(
+            "coincide",
+            foreground="#e67e00",
+            font=("Consolas", 10, "bold"),
+        )
+
+        cr_atual: set = set()
+
+        for linha in texto.split("\n"):
+            # Detecta linha de referência:  "    CR3 = {01, 02, ...}"
+            m_cr = re.match(r'(\s+CR\d+\s*=\s*\{)([^}]*)(\})', linha)
+            # Detecta linha de base:        "    CB12  = {01, 02, ...}"
+            m_cb = re.match(r'(\s+CB\d+\s*=\s*\{)([^}]*)(\})', linha)
+
+            if m_cr:
+                # Memoriza os elementos do CR atual para comparar com o CB
+                cr_atual = {n.strip() for n in m_cr.group(2).split(",") if n.strip()}
+                self.txt_saida.insert(tk.END, linha + "\n")
+
+            elif m_cb and cr_atual:
+                # Prefixo antes do '{'
+                self.txt_saida.insert(tk.END, m_cb.group(1))
+
+                numeros = [n.strip() for n in m_cb.group(2).split(",") if n.strip()]
+                for i, num in enumerate(numeros):
+                    tag = "coincide" if num in cr_atual else ""
+                    self.txt_saida.insert(tk.END, num, tag)
+                    if i < len(numeros) - 1:
+                        self.txt_saida.insert(tk.END, ", ")
+
+                self.txt_saida.insert(tk.END, m_cb.group(3) + "\n")
+
+            else:
+                # Linha normal — sem destaque, zera o CR memorizado
+                if not linha.strip().startswith("CR"):
+                    cr_atual = set()
+                self.txt_saida.insert(tk.END, linha + "\n")
 
     # ------------------------------------------------------------------ #
     #  Persistência em arquivos                                           #
