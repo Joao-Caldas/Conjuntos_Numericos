@@ -368,3 +368,87 @@ if __name__ == "__main__":
     print(f"  ✔ Execução   salva em: execucoes/{timestamp}.txt")
     print(f"  ✔ Conj. base salvo em: conjuntos base/{timestamp}.txt")
     print(f"  ✔ Conj. ref  salvo em: conjuntos referencia/{timestamp}.txt")
+
+
+# ====================================================================== #
+#  Busca por coincidência parcial                                         #
+# ====================================================================== #
+
+def parsear_numeros(texto: str) -> set:
+    """Converte string '01, 02, 03' em conjunto de inteiros {1, 2, 3}."""
+    nums = set()
+    for parte in texto.split(","):
+        parte = parte.strip().strip("{}")
+        if parte:
+            nums.add(int(parte))
+    return nums
+
+
+def buscar_por_coincidencia(numeros: set, k: int, conjuntos: list) -> list:
+    """
+    Encontra conjuntos base que contêm EXATAMENTE k dos números informados.
+
+    Parâmetros:
+      numeros   — conjunto de inteiros a procurar
+      k         — quantidade exata de coincidências exigida
+      conjuntos — lista de tuplas (nome, ConjuntoNumerico)
+
+    Retorna lista de (nome, conj, elementos_em_comum).
+    """
+    resultados = []
+    for nome, conj in conjuntos:
+        em_comum = sorted(set(conj.elementos) & numeros)
+        if len(em_comum) == k:
+            resultados.append((nome, conj, em_comum))
+    return resultados
+
+
+def buscar_grupos_e_verificar_contencao(numeros: set, k: int, conjuntos: list) -> list:
+    """
+    Busca parcial + verificação de contenção integradas.
+
+    Passo 1 — Encontra todos os CBs com EXATAMENTE k coincidências com 'numeros'
+              e agrupa os que têm os mesmos k elementos idênticos.
+
+    Passo 2 — Para cada grupo único, verifica TODOS os conjuntos base (não só
+              os encontrados no passo 1) e retorna quais contêm aquele grupo
+              como subconjunto.
+
+    Retorna lista de dicts ordenada por qtd de CBs que contêm (desc):
+      {
+        'grupo_elementos': tuple,          # os k elementos do grupo
+        'cbs_busca'     : list of tuples,  # CBs que geraram o grupo (exatamente k)
+        'cbs_contem'    : list of tuples,  # TODOS os CBs que contêm o grupo
+      }
+    """
+    from itertools import groupby
+
+    # ── Passo 1: CBs com exatamente k coincidências ──────────────────
+    resultados_k = []
+    for nome, conj in conjuntos:
+        em_comum = sorted(set(conj.elementos) & numeros)
+        if len(em_comum) == k:
+            resultados_k.append((nome, conj, em_comum))
+
+    resultados_k.sort(key=lambda x: x[2])  # ordena para o groupby
+
+    # ── Passo 2: para cada grupo verifica TODOS os CBs ───────────────
+    grupos_resultado = []
+    for chave, grupo in groupby(resultados_k, key=lambda x: tuple(x[2])):
+        membros_busca = list(grupo)
+        ref = ConjuntoNumerico(list(chave))
+
+        cbs_contem = []
+        for nome, conj in conjuntos:          # percorre TODOS os 2000 CBs
+            if ref.subconjunto(conj):
+                cbs_contem.append((nome, conj))
+
+        grupos_resultado.append({
+            'grupo_elementos': chave,
+            'cbs_busca'     : membros_busca,
+            'cbs_contem'    : cbs_contem,
+        })
+
+    # Ordena por quantidade de CBs que contêm (maior primeiro)
+    grupos_resultado.sort(key=lambda x: len(x['cbs_contem']), reverse=True)
+    return grupos_resultado

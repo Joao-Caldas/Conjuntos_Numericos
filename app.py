@@ -30,6 +30,9 @@ from main import (
     exibir_conjuntos,
     verificar_contencao,
     verificar_contencao_dados,
+    parsear_numeros,
+    buscar_por_coincidencia,
+    buscar_grupos_e_verificar_contencao,
 )
 
 
@@ -170,6 +173,24 @@ class App(tk.Tk):
         self.btn_cancelar_rodada.pack(side="left", padx=(4, 0))
 
         # ── Área de saída ────────────────────────────────────────────────
+        # ── Busca por coincidência parcial ───────────────────────────────
+        frame_busca_parcial = ttk.LabelFrame(container, text="Busca por coincidência parcial", padding=8)
+        frame_busca_parcial.pack(fill="x", pady=(0, 6))
+
+        ttk.Label(frame_busca_parcial, text="Números (ex: 01, 02, 03):").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        self.ent_parcial_nums = ttk.Entry(frame_busca_parcial, width=60)
+        self.ent_parcial_nums.grid(row=0, column=1, sticky="ew", padx=(0, 10))
+        frame_busca_parcial.columnconfigure(1, weight=1)
+
+        ttk.Label(frame_busca_parcial, text="Coincidências exatas:").grid(row=0, column=2, sticky="w", padx=(0, 6))
+        self.ent_parcial_k = ttk.Entry(frame_busca_parcial, width=6)
+        self.ent_parcial_k.insert(0, "15")
+        self.ent_parcial_k.grid(row=0, column=3, sticky="w", padx=(0, 10))
+
+        ttk.Button(frame_busca_parcial, text="🔍 Buscar",
+                   command=self._buscar_parcial).grid(row=0, column=4, sticky="w", padx=(0,4))
+
+
         ttk.Label(container, text="Resultado:").pack(anchor="w")
         self.txt_saida = scrolledtext.ScrolledText(
             container, wrap="word", font=("Consolas", 10), height=24
@@ -358,9 +379,149 @@ class App(tk.Tk):
         self.btn_nova_rodada.config(text="🔄 Nova rodada com conjuntos contidos")
         self.lbl_status.config(text="Pronto.")
 
+
     # ------------------------------------------------------------------ #
-    #  Leitura e validação dos campos                                     #
+    #  Busca por coincidência parcial                                     #
     # ------------------------------------------------------------------ #
+
+    def _buscar_parcial(self):
+        """
+        1. Encontra CBs com exatamente K coincidências.
+        2. Agrupa os que têm os mesmos K elementos.
+        3. Para cada grupo, verifica TODOS os CBs (não só os encontrados)
+           e exibe quais os contêm como subconjunto.
+        """
+        if not hasattr(self, "_conjuntos_atuais") or not self._conjuntos_atuais:
+            messagebox.showwarning("Atenção", "Execute a verificação principal primeiro.")
+            return
+
+        texto = self.ent_parcial_nums.get().strip()
+        if not texto:
+            messagebox.showwarning("Atenção", "Digite os números para buscar.")
+            return
+
+        try:
+            numeros = parsear_numeros(texto)
+            k = int(self.ent_parcial_k.get().strip())
+        except ValueError as e:
+            messagebox.showerror("Entrada inválida", str(e))
+            return
+
+        if k < 1 or k > len(numeros):
+            messagebox.showerror("Entrada inválida",
+                f"Mínimo deve estar entre 1 e {len(numeros)}.")
+            return
+
+        conjuntos = self._conjuntos_atuais
+
+        self.txt_saida.delete("1.0", tk.END)
+        self.btn_executar.state(["disabled"])
+        self.lbl_status.config(text="Buscando grupos e verificando contenção em todos os CBs...")
+
+        import threading, queue as _q
+        fila = _q.Queue()
+
+        def _trabalho():
+            import sys, io
+            buf = io.StringIO()
+            orig = sys.stdout
+            sys.stdout = buf
+            grupos = []
+            try:
+                grupos = buscar_grupos_e_verificar_contencao(numeros, k, conjuntos)
+            except Exception as e:
+                print(f"\n  ✗ Erro: {e}")
+            finally:
+                sys.stdout = orig
+                fila.put((buf.getvalue(), grupos, numeros, k))
+
+        threading.Thread(target=_trabalho, daemon=True).start()
+
+        def _poll():
+            try:
+                _, grupos, _numeros, _k = fila.get_nowait()
+            except __import__("queue").Empty:
+                self.after(150, _poll)
+                return
+
+            self._renderizar_grupos_parciais(grupos, _numeros, _k, conjuntos)
+            self.btn_executar.state(["!disabled"])
+
+        self.after(150, _poll)
+
+    def _renderizar_grupos_parciais(self, grupos, numeros, k, conjuntos):
+        """Renderiza o resultado de buscar_grupos_e_verificar_contencao."""
+        SEP  = "─" * 52
+
+        self.txt_saida.tag_config("parcial_match",
+            foreground="#e67e00", font=("Consolas", 10, "bold"))
+        self.txt_saida.tag_config("grupo_header",
+            foreground="#1a6fbe", font=("Consolas", 10, "bold"))
+
+        w = lambda t, tag="": self.txt_saida.insert(tk.END, t, tag)
+
+        n_total_cbs  = len(conjuntos)
+        n_grupos     = len(grupos)
+        total_busca  = sum(len(g["cbs_busca"]) for g in grupos)
+        total_contem = sum(len(g["cbs_contem"]) for g in grupos)
+        larg_num     = len(str(max(numeros))) if numeros else 2
+
+        w("\n" + "═" * 52 + "\n")
+        w("   BUSCA PARCIAL + CONTENÇÃO EM TODOS OS CBs\n")
+        w("═" * 52 + "\n")
+        w(f"  Números buscados ({len(numeros)}): {sorted(numeros)}\n")
+        w(f"  Coincidências exatas        : {k}\n")
+        w(f"  Total de CBs verificados    : {n_total_cbs}\n")
+        w(f"  CBs com exatamente {k} coinc.: {total_busca}\n")
+        w(f"  Grupos únicos encontrados   : {n_grupos}\n")
+        w(f"  Total pares contidos (CR⊆CB): {total_contem}\n")
+
+        if not grupos:
+            w("\n  Nenhum grupo encontrado com esse critério.\n")
+            self.lbl_status.config(text="Busca parcial: nenhum resultado.")
+            self.txt_saida.see("1.0")
+            return
+
+        n_par = 0
+        for g_idx, grupo in enumerate(grupos, start=1):
+            chave        = grupo["grupo_elementos"]
+            cbs_busca    = grupo["cbs_busca"]
+            cbs_contem   = grupo["cbs_contem"]
+
+            larg_c    = len(str(max(chave))) if chave else 2
+            chave_str = "{" + ", ".join(str(x).zfill(larg_c) for x in chave) + "}"
+
+            w(f"\n{SEP}\n")
+            w(f"  Grupo {g_idx}  —  {chave_str}\n", "grupo_header")
+            n_superconj = len([c for c in cbs_contem
+                               if c[0] not in {m[0] for m in cbs_busca}])
+            w(f"  CBs com exatamente {k}: {len(cbs_busca)}"
+              f"  |  superconjuntos que também contêm: {n_superconj}"
+              f"  |  total que contêm: {len(cbs_contem)} (de {len(conjuntos)})\n",
+              "grupo_header")
+            w(f"{SEP}\n")
+
+            for nome, conj in cbs_contem:
+                n_par += 1
+                w(f"\n  {n_par}. {nome}\n")
+                w(f"    conjunto = {{")
+                larg = len(str(max(abs(int(e)) for e in conj.elementos)))
+                for i, e in enumerate(conj.elementos):
+                    s   = str(int(e)).zfill(larg)
+                    tag = "parcial_match" if int(e) in set(chave) else ""
+                    w(s, tag)
+                    if i < len(conj.elementos) - 1:
+                        w(", ")
+                w("}\n")
+                em_str = ", ".join(str(x).zfill(larg_num) for x in chave)
+                w(f"    em comum  = {{{em_str}}}\n")
+
+        self.txt_saida.see("1.0")
+        self.lbl_status.config(
+            text=f"Busca parcial: {n_grupos} grupo(s) · {total_busca} CBs com {k} exatas · "
+                 f"{total_contem} pares contidos em todos os {n_total_cbs} CBs."
+        )
+
 
     def _ler_int(self, entry: ttk.Entry, nome_campo: str) -> int:
         texto = entry.get().strip()
@@ -508,7 +669,7 @@ class App(tk.Tk):
 
         finally:
             sys.stdout = stdout_original
-            self._fila_resultado.put((buffer.getvalue(), erro, contem_dados))
+            self._fila_resultado.put((buffer.getvalue(), erro, contem_dados, conjuntos))
 
     def _verificar_resultado(self):
         """
@@ -517,7 +678,7 @@ class App(tk.Tk):
         a interface com segurança.
         """
         try:
-            texto, erro, contem_dados = self._fila_resultado.get_nowait()
+            texto, erro, contem_dados, conjuntos_atuais = self._fila_resultado.get_nowait()
         except queue.Empty:
             self.after(100, self._verificar_resultado)
             return
@@ -529,6 +690,8 @@ class App(tk.Tk):
 
         self.btn_executar.state(["!disabled"])
         self.lbl_status.config(text="Erro." if erro else "Concluído.")
+        if not erro:
+            self._conjuntos_atuais = conjuntos_atuais
 
         # Habilita nova rodada se houver conjuntos contidos
         if not erro and contem_dados:
