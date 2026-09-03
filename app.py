@@ -33,6 +33,10 @@ from main import (
     parsear_numeros,
     buscar_por_coincidencia,
     buscar_grupos_e_verificar_contencao,
+    buscar_todos_grupos_possiveis,
+    comparar_cbs_entre_si,
+    comparar_dois_conjuntos,
+    filtrar_cbs_por_grupo,
 )
 
 
@@ -190,6 +194,71 @@ class App(tk.Tk):
         ttk.Button(frame_busca_parcial, text="🔍 Buscar",
                    command=self._buscar_parcial).grid(row=0, column=4, sticky="w", padx=(0,4))
 
+
+        # ── Verificação de grupo manual ──────────────────────────────────
+        frame_grupo_manual = ttk.LabelFrame(
+            container, text="🎯 Verificar grupo específico", padding=8
+        )
+        frame_grupo_manual.pack(fill="x", pady=(0, 6))
+
+        ttk.Label(frame_grupo_manual, text="Números do grupo:").grid(
+            row=0, column=0, sticky="w", padx=(0, 6)
+        )
+        self.ent_grupo_manual = ttk.Entry(frame_grupo_manual, width=60)
+        self.ent_grupo_manual.grid(row=0, column=1, sticky="ew", padx=(0, 10))
+        frame_grupo_manual.columnconfigure(1, weight=1)
+
+        ttk.Button(
+            frame_grupo_manual, text="🎯 Verificar",
+            command=self._verificar_grupo_manual
+        ).grid(row=0, column=2, sticky="w")
+
+        # ── Comparação entre CBs ─────────────────────────────────────────
+        frame_comparar = ttk.LabelFrame(
+            container, text="🔁 Comparação entre CBs (par a par)", padding=8
+        )
+        frame_comparar.pack(fill="x", pady=(0, 6))
+
+        ttk.Label(frame_comparar, text="K idênticos exatos:").grid(row=0, column=0, sticky="w", padx=(0,6))
+        self.ent_comp_k = ttk.Entry(frame_comparar, width=6)
+        self.ent_comp_k.insert(0, "15")
+        self.ent_comp_k.grid(row=0, column=1, sticky="w", padx=(0,10))
+
+        ttk.Label(frame_comparar, text="Mostrar grupos com ≥ pares:").grid(row=0, column=2, sticky="w", padx=(0,6))
+        self.ent_comp_min = ttk.Entry(frame_comparar, width=6)
+        self.ent_comp_min.insert(0, "2")
+        self.ent_comp_min.grid(row=0, column=3, sticky="w", padx=(0,10))
+
+        ttk.Button(
+            frame_comparar, text="🔁 Comparar",
+            command=self._comparar_cbs
+        ).grid(row=0, column=4, sticky="w")
+
+        # ── Nova comparação a partir de grupo colado ─────────────────────
+        frame_nova_comp = ttk.LabelFrame(
+            container, text="📋 Nova comparação a partir de grupo colado", padding=8
+        )
+        frame_nova_comp.pack(fill="x", pady=(0, 6))
+
+        ttk.Label(frame_nova_comp, text="Cole o grupo:").grid(row=0, column=0, sticky="w", padx=(0,6))
+        self.ent_grupo_colado = ttk.Entry(frame_nova_comp, width=55)
+        self.ent_grupo_colado.grid(row=0, column=1, sticky="ew", padx=(0,8))
+        frame_nova_comp.columnconfigure(1, weight=1)
+
+        ttk.Label(frame_nova_comp, text="Novo K:").grid(row=0, column=2, sticky="w", padx=(0,4))
+        self.ent_nova_k = ttk.Entry(frame_nova_comp, width=5)
+        self.ent_nova_k.insert(0, "14")
+        self.ent_nova_k.grid(row=0, column=3, sticky="w", padx=(0,8))
+
+        ttk.Label(frame_nova_comp, text="≥ pares:").grid(row=0, column=4, sticky="w", padx=(0,4))
+        self.ent_nova_min = ttk.Entry(frame_nova_comp, width=5)
+        self.ent_nova_min.insert(0, "2")
+        self.ent_nova_min.grid(row=0, column=5, sticky="w", padx=(0,8))
+
+        ttk.Button(
+            frame_nova_comp, text="🔁 Comparar grupo",
+            command=self._nova_comp_grupo_colado
+        ).grid(row=0, column=6, sticky="w")
 
         ttk.Label(container, text="Resultado:").pack(anchor="w")
         self.txt_saida = scrolledtext.ScrolledText(
@@ -384,6 +453,292 @@ class App(tk.Tk):
     #  Busca por coincidência parcial                                     #
     # ------------------------------------------------------------------ #
 
+
+
+
+
+    def _nova_comp_grupo_colado(self):
+        """
+        Filtra os CBs que contêm o grupo colado e compara entre si com novo K.
+        """
+        if not hasattr(self, "_conjuntos_atuais") or not self._conjuntos_atuais:
+            messagebox.showwarning("Atenção", "Execute a verificação principal primeiro.")
+            return
+
+        texto = self.ent_grupo_colado.get().strip()
+        if not texto:
+            messagebox.showwarning("Atenção", "Cole um grupo no campo.")
+            return
+
+        try:
+            k_nova  = int(self.ent_nova_k.get().strip())
+            mn_nova = int(self.ent_nova_min.get().strip())
+            nums    = parsear_numeros(texto)
+        except ValueError as e:
+            messagebox.showerror("Erro", str(e))
+            return
+
+        conjuntos = self._conjuntos_atuais
+        cbs_filt  = filtrar_cbs_por_grupo(nums, conjuntos)
+
+        if not cbs_filt:
+            messagebox.showinfo("Resultado",
+                f"Nenhum CB contém todos os {len(nums)} elementos do grupo colado.")
+            return
+
+        n_f = len(cbs_filt)
+        self.txt_saida.delete("1.0", tk.END)
+        self.btn_executar.state(["disabled"])
+        self.lbl_status.config(
+            text=f"{n_f} CBs contêm o grupo. Comparando {n_f*(n_f-1)//2:,} pares com K={k_nova}..."
+        )
+
+        import threading, queue as _q
+        fila = _q.Queue()
+
+        def _trabalho():
+            grupos = []
+            try:
+                grupos = comparar_cbs_entre_si(k_nova, cbs_filt)
+            except Exception:
+                pass
+            finally:
+                fila.put((grupos, k_nova, mn_nova, sorted(nums), cbs_filt))
+
+        threading.Thread(target=_trabalho, daemon=True).start()
+
+        def _poll():
+            try:
+                grupos, _k, _mn, _orig, _cbs = fila.get_nowait()
+            except __import__("queue").Empty:
+                self.after(200, _poll)
+                return
+
+            SEP      = "─" * 52
+            filtrados = [g for g in grupos if len(g["pares"]) >= _mn]
+            total_p   = sum(len(g["pares"]) for g in grupos)
+            larg_orig = len(str(max(_orig))) if _orig else 2
+            orig_str  = "{" + ", ".join(str(x).zfill(larg_orig) for x in _orig) + "}"
+
+            self.txt_saida.tag_config("grupo_header",
+                foreground="#1a6fbe", font=("Consolas", 10, "bold"))
+            self.txt_saida.tag_config("parcial_match",
+                foreground="#e67e00", font=("Consolas", 10, "bold"))
+
+            w = lambda t, tag="": self.txt_saida.insert(tk.END, t, tag)
+
+            w("\n" + "═" * 52 + "\n")
+            w("   NOVA COMPARAÇÃO — GRUPO COLADO\n")
+            w("═" * 52 + "\n")
+            w(f"  Grupo de origem : {orig_str}\n")
+            w(f"  CBs que o contêm: {len(_cbs)}\n")
+            w(f"  Novo K          : {_k}\n")
+            w(f"  Grupos únicos   : {len(grupos):,}\n")
+            w(f"  Total pares     : {total_p:,}\n")
+            w(f"  Exibindo (≥{_mn} pares): {len(filtrados):,}\n")
+
+            if not filtrados:
+                w("\n  Nenhum grupo com esse critério.\n")
+            else:
+                larg = len(str(max(e for g in filtrados for e in g["elementos_comuns"])))
+                for g_idx, grupo in enumerate(filtrados, start=1):
+                    chave  = grupo["elementos_comuns"]
+                    pares  = grupo["pares"]
+                    cbs_g  = sorted(grupo["cbs"])
+                    ch_str = "{" + ", ".join(str(x).zfill(larg) for x in chave) + "}"
+                    w(f"\n{SEP}\n")
+                    w(f"  Grupo {g_idx}  —  {ch_str}\n", "grupo_header")
+                    w(f"  {len(pares)} par(es) | CBs: {', '.join(cbs_g)}\n", "grupo_header")
+                    w(f"{SEP}\n")
+                    for ni, ci, nj, cj in pares:
+                        w(f"\n  {ni} × {nj}\n")
+                        for nome, conj in [(ni, ci), (nj, cj)]:
+                            w(f"    {nome} = {{")
+                            larg2 = len(str(max(abs(int(e)) for e in conj.elementos)))
+                            for idx2, e in enumerate(conj.elementos):
+                                s   = str(int(e)).zfill(larg2)
+                                tag = "parcial_match" if int(e) in set(chave) else ""
+                                w(s, tag)
+                                if idx2 < len(conj.elementos) - 1:
+                                    w(", ")
+                            w("}\n")
+
+            self.txt_saida.see("1.0")
+            self.btn_executar.state(["!disabled"])
+            self.lbl_status.config(
+                text=f"Nova comparação: {len(_cbs)} CBs filtrados · "
+                     f"{len(grupos):,} grupos · {len(filtrados)} exibidos (≥{_mn} pares)."
+            )
+
+        self.after(200, _poll)
+
+    def _comparar_cbs(self):
+        """Compara entre si os CBs atualmente carregados (conjunto ativo)."""
+        if not hasattr(self, "_conjuntos_atuais") or not self._conjuntos_atuais:
+            messagebox.showwarning("Atenção", "Execute a verificação principal primeiro.")
+            return
+        try:
+            k  = int(self.ent_comp_k.get().strip())
+            mn = int(self.ent_comp_min.get().strip())
+        except ValueError:
+            messagebox.showerror("Erro", "K e mínimo de pares devem ser inteiros.")
+            return
+
+        conjuntos = self._conjuntos_atuais
+        n = len(conjuntos)
+        self.txt_saida.delete("1.0", tk.END)
+        self.btn_executar.state(["disabled"])
+        self.lbl_status.config(
+            text=f"Comparando {n*(n-1)//2:,} pares entre {n} conjuntos carregados... aguarde."
+        )
+
+        import threading, queue as _q
+        fila = _q.Queue()
+
+        def _trabalho():
+            grupos = []
+            try:
+                grupos = comparar_cbs_entre_si(k, conjuntos)
+            except Exception:
+                pass
+            finally:
+                fila.put((grupos, k, mn))
+
+        threading.Thread(target=_trabalho, daemon=True).start()
+
+        def _poll():
+            try:
+                grupos, _k, _mn = fila.get_nowait()
+            except __import__("queue").Empty:
+                self.after(300, _poll)
+                return
+            self._renderizar_comparacao(grupos, _k, _mn, conjuntos)
+            self.btn_executar.state(["!disabled"])
+
+        self.after(300, _poll)
+
+    def _renderizar_comparacao(self, grupos, k, min_pares, conjuntos):
+        SEP = "─" * 52
+        filtrados = [g for g in grupos if len(g["pares"]) >= min_pares]
+        total_pares = sum(len(g["pares"]) for g in grupos)
+
+        self.txt_saida.tag_config("grupo_header",
+            foreground="#1a6fbe", font=("Consolas", 10, "bold"))
+        self.txt_saida.tag_config("parcial_match",
+            foreground="#e67e00", font=("Consolas", 10, "bold"))
+
+        w = lambda t, tag="": self.txt_saida.insert(tk.END, t, tag)
+
+        w("\n" + "═" * 52 + "\n")
+        w("   COMPARAÇÃO ENTRE CBs (PAR A PAR)\n")
+        w("═" * 52 + "\n")
+        w(f"  K idênticos exatos       : {k}\n")
+        w(f"  Total de pares comparados: {len(conjuntos)*(len(conjuntos)-1)//2:,}\n")
+        w(f"  Grupos únicos encontrados: {len(grupos):,}\n")
+        w(f"  Total de pares com {k} id.: {total_pares:,}\n")
+        w(f"  Exibindo grupos com ≥ {min_pares} pares: {len(filtrados):,}\n")
+
+        if not filtrados:
+            w("\n  Nenhum grupo com esse critério.\n")
+        else:
+            larg = len(str(max(e for g in filtrados for e in g["elementos_comuns"])))
+            for g_idx, grupo in enumerate(filtrados, start=1):
+                chave  = grupo["elementos_comuns"]
+                pares  = grupo["pares"]
+                cbs    = sorted(grupo["cbs"])
+                ch_str = "{" + ", ".join(str(x).zfill(larg) for x in chave) + "}"
+
+                w(f"\n{SEP}\n")
+                w(f"  Grupo {g_idx}  —  {ch_str}\n", "grupo_header")
+                w(f"  {len(pares)} par(es)  |  {len(cbs)} CBs únicos: {', '.join(cbs)}\n",
+                  "grupo_header")
+                w(f"{SEP}\n")
+
+                for ni, ci, nj, cj in pares:
+                    w(f"\n  {ni} × {nj}\n")
+                    for nome, conj in [(ni, ci), (nj, cj)]:
+                        w(f"    {nome} = {{")
+                        larg2 = len(str(max(abs(int(e)) for e in conj.elementos)))
+                        for idx2, e in enumerate(conj.elementos):
+                            s   = str(int(e)).zfill(larg2)
+                            tag = "parcial_match" if int(e) in set(chave) else ""
+                            w(s, tag)
+                            if idx2 < len(conj.elementos) - 1:
+                                w(", ")
+                        w("}\n")
+
+        self.txt_saida.see("1.0")
+        self.lbl_status.config(
+            text=f"Comparação: {len(grupos):,} grupos · {total_pares:,} pares · exibindo {len(filtrados):,} com ≥{min_pares} pares."
+        )
+
+    def _verificar_grupo_manual(self):
+        """
+        Verifica quais CBs contêm o grupo digitado manualmente como subconjunto,
+        sem depender de ter sido gerado pela busca parcial.
+        """
+        if not hasattr(self, "_conjuntos_atuais") or not self._conjuntos_atuais:
+            messagebox.showwarning("Atenção", "Execute a verificação principal primeiro.")
+            return
+
+        texto = self.ent_grupo_manual.get().strip()
+        if not texto:
+            messagebox.showwarning("Atenção", "Digite os números do grupo.")
+            return
+
+        try:
+            nums_gm = parsear_numeros(texto)
+            ref_gm  = ConjuntoNumerico(sorted(nums_gm))
+        except ValueError as e:
+            messagebox.showerror("Entrada inválida", str(e))
+            return
+
+        conjuntos  = self._conjuntos_atuais
+        encontrados = [(nome, conj) for nome, conj in conjuntos if ref_gm.subconjunto(conj)]
+
+        SEP      = "─" * 52
+        larg_gm  = len(str(max(nums_gm))) if nums_gm else 2
+        grupo_str = "{" + ", ".join(str(x).zfill(larg_gm) for x in sorted(nums_gm)) + "}"
+
+        self.txt_saida.delete("1.0", tk.END)
+        self.txt_saida.tag_config("parcial_match",
+            foreground="#e67e00", font=("Consolas", 10, "bold"))
+        self.txt_saida.tag_config("grupo_header",
+            foreground="#1a6fbe", font=("Consolas", 10, "bold"))
+
+        w = lambda t, tag="": self.txt_saida.insert(tk.END, t, tag)
+
+        w("\n" + "═" * 52 + "\n")
+        w("   VERIFICAÇÃO DE GRUPO MANUAL\n")
+        w("═" * 52 + "\n")
+        w(f"  Grupo     : {grupo_str}\n")
+        w(f"  Tamanho   : {len(nums_gm)} elementos\n")
+        w(f"  CBs verificados: {len(conjuntos)}\n")
+        w(f"  CBs que contêm: {len(encontrados)}\n")
+        w(SEP + "\n")
+
+        if not encontrados:
+            w("\n  Nenhum CB contém esse grupo como subconjunto.\n")
+        else:
+            for i, (nome, conj) in enumerate(encontrados, start=1):
+                w(f"\n  {i}. {nome}\n")
+                w(f"    conjunto = {{")
+                larg = len(str(max(abs(int(e)) for e in conj.elementos)))
+                for j, e in enumerate(conj.elementos):
+                    s   = str(int(e)).zfill(larg)
+                    tag = "parcial_match" if int(e) in nums_gm else ""
+                    w(s, tag)
+                    if j < len(conj.elementos) - 1:
+                        w(", ")
+                w("}\n")
+                em_str = ", ".join(str(x).zfill(larg_gm) for x in sorted(nums_gm))
+                w(f"    em comum  = {{{em_str}}}\n")
+
+        self.txt_saida.see("1.0")
+        self.lbl_status.config(
+            text=f"Grupo manual: {len(encontrados)} CB(s) contêm o grupo (de {len(conjuntos)})."
+        )
+
     def _buscar_parcial(self):
         """
         1. Encontra CBs com exatamente K coincidências.
@@ -428,7 +783,7 @@ class App(tk.Tk):
             sys.stdout = buf
             grupos = []
             try:
-                grupos = buscar_grupos_e_verificar_contencao(numeros, k, conjuntos)
+                grupos = buscar_todos_grupos_possiveis(numeros, k, conjuntos)
             except Exception as e:
                 print(f"\n  ✗ Erro: {e}")
             finally:
@@ -462,17 +817,15 @@ class App(tk.Tk):
 
         n_total_cbs  = len(conjuntos)
         n_grupos     = len(grupos)
-        total_busca  = sum(len(g["cbs_busca"]) for g in grupos)
         total_contem = sum(len(g["cbs_contem"]) for g in grupos)
         larg_num     = len(str(max(numeros))) if numeros else 2
 
         w("\n" + "═" * 52 + "\n")
-        w("   BUSCA PARCIAL + CONTENÇÃO EM TODOS OS CBs\n")
+        w("   BUSCA PARCIAL — TODOS OS GRUPOS POSSÍVEIS\n")
         w("═" * 52 + "\n")
         w(f"  Números buscados ({len(numeros)}): {sorted(numeros)}\n")
-        w(f"  Coincidências exatas        : {k}\n")
+        w(f"  K (coincidências exatas)    : {k}\n")
         w(f"  Total de CBs verificados    : {n_total_cbs}\n")
-        w(f"  CBs com exatamente {k} coinc.: {total_busca}\n")
         w(f"  Grupos únicos encontrados   : {n_grupos}\n")
         w(f"  Total pares contidos (CR⊆CB): {total_contem}\n")
 

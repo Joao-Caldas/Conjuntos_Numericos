@@ -19,6 +19,9 @@ from main import (
     verificar_contencao_dados,
     parsear_numeros,
     buscar_grupos_e_verificar_contencao,
+    buscar_todos_grupos_possiveis,
+    comparar_cbs_entre_si,
+    filtrar_cbs_por_grupo,
 )
 
 
@@ -346,7 +349,7 @@ if buscar_parcial:
                 st.stop()
 
             with st.spinner(f"Buscando em {len(st.session_state.conjuntos)} CBs..."):
-                grupos_p = buscar_grupos_e_verificar_contencao(
+                grupos_p = buscar_todos_grupos_possiveis(
                     numeros_p, k_val, st.session_state.conjuntos
                 )
             st.session_state.grupos_parciais = {
@@ -365,15 +368,13 @@ if st.session_state.grupos_parciais is not None:
     k_val    = gp["k"]
     total_cbs = len(st.session_state.conjuntos)
 
-    total_busca  = sum(len(g["cbs_busca"])  for g in grupos_p)
     total_contem = sum(len(g["cbs_contem"]) for g in grupos_p)
 
     st.subheader("📊 Resultado da busca parcial")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric(f"CBs com exatamente {k_val}", total_busca)
-    c2.metric("Grupos únicos",               len(grupos_p))
-    c3.metric("Total CBs verificados",        total_cbs)
-    c4.metric("Pares contidos (CR⊆CB)",       total_contem)
+    c1, c2, c3 = st.columns(3)
+    c1.metric(f"Grupos únicos de {k_val}",  len(grupos_p))
+    c2.metric("Total CBs verificados",      total_cbs)
+    c3.metric("Pares contidos (CR⊆CB)",     total_contem)
 
     if not grupos_p:
         st.info("Nenhum grupo encontrado.")
@@ -382,20 +383,14 @@ if st.session_state.grupos_parciais is not None:
 
         for g_idx, grupo in enumerate(grupos_p, start=1):
             chave      = grupo["grupo_elementos"]
-            cbs_busca  = grupo["cbs_busca"]
             cbs_contem = grupo["cbs_contem"]
 
             larg_c    = len(str(max(chave))) if chave else 2
             chave_str = "{" + ", ".join(str(x).zfill(larg_c) for x in chave) + "}"
 
-            nomes_busca = {m[0] for m in cbs_busca}
-            n_super     = len([c for c in cbs_contem if c[0] not in nomes_busca])
-
             label = (
                 f"Grupo {g_idx} — {chave_str} "
-                f"| {len(cbs_busca)} com exatamente {k_val} "
-                f"| +{n_super} superconjuntos "
-                f"| {len(cbs_contem)} total (de {total_cbs})"
+                f"| {len(cbs_contem)} CBs que contêm (de {total_cbs})"
             )
 
             with st.expander(label, expanded=False):
@@ -404,3 +399,260 @@ if st.session_state.grupos_parciais is not None:
                     em_str = "{" + ", ".join(str(x).zfill(larg_num) for x in chave) + "}"
                     st.markdown(f"**{nome}** = {html}", unsafe_allow_html=True)
                     st.caption(f"em comum = {em_str}")
+
+
+# ====================================================================== #
+#  Verificação de grupo manual                                            #
+# ====================================================================== #
+
+st.divider()
+st.subheader("🎯 Verificar grupo específico")
+st.caption(
+    "Digite qualquer combinação de números e veja quais CBs a contêm — "
+    "independente de ter sido gerada pela busca parcial."
+)
+
+col_gm1, col_gm2 = st.columns([5, 1])
+with col_gm1:
+    texto_grupo_manual = st.text_input(
+        "Números do grupo (ex: 01, 02, 03, ...):",
+        placeholder="01, 02, 03, 04, 05, 08, 09, 14, 15, 17, 20, 21, 22, 23, 24",
+        key="grupo_manual_nums"
+    )
+with col_gm2:
+    st.write(""); st.write("")
+    verificar_grupo = st.button("🎯 Verificar", key="btn_grupo_manual", use_container_width=True)
+
+if verificar_grupo:
+    if not texto_grupo_manual.strip():
+        st.warning("Digite os números do grupo.")
+    elif st.session_state.conjuntos is None:
+        st.warning("Execute a verificação principal primeiro para carregar os conjuntos base.")
+    else:
+        try:
+            nums_gm  = parsear_numeros(texto_grupo_manual)
+            ref_gm   = ConjuntoNumerico(sorted(nums_gm))
+            total_cbs = len(st.session_state.conjuntos)
+
+            with st.spinner(f"Verificando em {total_cbs} CBs..."):
+                encontrados = [
+                    (nome, conj)
+                    for nome, conj in st.session_state.conjuntos
+                    if ref_gm.subconjunto(conj)
+                ]
+
+            st.session_state["resultado_grupo_manual"] = {
+                "grupo"      : sorted(nums_gm),
+                "encontrados": encontrados,
+                "total_cbs"  : total_cbs,
+            }
+        except ValueError as e:
+            st.error(f"Entrada inválida: {e}")
+
+if st.session_state.get("resultado_grupo_manual"):
+    rgm       = st.session_state["resultado_grupo_manual"]
+    grupo_gm  = rgm["grupo"]
+    enc       = rgm["encontrados"]
+    total_cbs = rgm["total_cbs"]
+
+    larg_gm  = len(str(max(grupo_gm))) if grupo_gm else 2
+    grupo_str = "{" + ", ".join(str(x).zfill(larg_gm) for x in grupo_gm) + "}"
+
+    st.markdown(f"**Grupo:** `{grupo_str}` &nbsp;·&nbsp; **{len(enc)} CB(s)** contêm esse grupo (de {total_cbs})")
+
+    if not enc:
+        st.info("Nenhum CB contém esse grupo como subconjunto.")
+    else:
+        busca_gm = st.text_input("🔍 Filtrar por nome:", placeholder="CB5", key="busca_gm")
+        lista_gm = enc
+        if busca_gm.strip():
+            lista_gm = [(n, c) for n, c in enc if busca_gm.strip().upper() in n.upper()]
+            st.caption(f"{len(lista_gm)} resultado(s) para: {busca_gm.strip()!r}")
+
+        for i, (nome, conj) in enumerate(lista_gm, start=1):
+            html_gm = highlight_html(conj.elementos, set(grupo_gm))
+            em_str  = "{" + ", ".join(str(x).zfill(larg_gm) for x in grupo_gm) + "}"
+            with st.expander(f"{i}. {nome}", expanded=False):
+                st.markdown(f"**{nome}** = {html_gm}", unsafe_allow_html=True)
+                st.caption(f"em comum = {em_str}")
+
+
+# ====================================================================== #
+#  Comparação entre CBs (par a par)                                       #
+# ====================================================================== #
+
+st.divider()
+st.subheader("🔁 Comparação entre CBs (par a par)")
+st.caption("Compara os conjuntos atualmente carregados entre si.")
+
+col_ck1, col_ck2, col_ck3 = st.columns([1, 1, 1])
+with col_ck1:
+    k_comp = st.number_input("K idênticos exatos", min_value=1, value=15, step=1, key="comp_k")
+with col_ck2:
+    min_pares = st.number_input("Mostrar grupos com ≥ pares", min_value=1, value=2, step=1, key="comp_min")
+with col_ck3:
+    st.write(""); st.write("")
+    comparar = st.button("🔁 Comparar", key="btn_comparar", use_container_width=True)
+
+if comparar:
+    if st.session_state.conjuntos is None:
+        st.warning("Execute a verificação principal primeiro para carregar os conjuntos.")
+    else:
+        conj = st.session_state.conjuntos
+        n    = len(conj)
+        with st.spinner(f"Comparando {n*(n-1)//2:,} pares entre {n} conjuntos carregados... aguarde."):
+            grupos_comp = comparar_cbs_entre_si(int(k_comp), conj)
+        st.session_state["resultado_comparacao"] = {
+            "grupos"    : grupos_comp,
+            "k"         : int(k_comp),
+            "min_pares" : int(min_pares),
+            "n_cbs"     : n,
+        }
+
+if st.session_state.get("resultado_comparacao"):
+    rc        = st.session_state["resultado_comparacao"]
+    grupos_c  = rc["grupos"]
+    k_c       = rc["k"]
+    mp        = rc["min_pares"]
+    n_cbs     = rc["n_cbs"]
+    filtrados = [g for g in grupos_c if len(g["pares"]) >= mp]
+    total_p   = sum(len(g["pares"]) for g in grupos_c)
+
+    st.subheader("📊 Resultado da comparação")
+    cm1, cm2, cm3, cm4 = st.columns(4)
+    cm1.metric("Grupos únicos",          f"{len(grupos_c):,}")
+    cm2.metric(f"Total pares com {k_c} id.", f"{total_p:,}")
+    cm3.metric(f"Grupos com ≥{mp} pares",   f"{len(filtrados):,}")
+    cm4.metric("CBs na base",            n_cbs)
+
+    if not filtrados:
+        st.info("Nenhum grupo com esse critério.")
+    else:
+        larg = len(str(max(e for g in filtrados for e in g["elementos_comuns"])))
+        for g_idx, grupo in enumerate(filtrados, start=1):
+            chave  = grupo["elementos_comuns"]
+            pares  = grupo["pares"]
+            cbs    = sorted(grupo["cbs"])
+            ch_str = "{" + ", ".join(str(x).zfill(larg) for x in chave) + "}"
+            label  = (f"Grupo {g_idx} — {ch_str} "
+                      f"| {len(pares)} par(es) | {len(cbs)} CBs: {', '.join(cbs)}")
+
+            with st.expander(label, expanded=False):
+                for ni, ci, nj, cj in pares:
+                    st.markdown(f"**{ni} × {nj}**")
+                    for nome, conj in [(ni, ci), (nj, cj)]:
+                        partes = []
+                        larg2 = len(str(max(abs(int(e)) for e in conj.elementos)))
+                        for e in conj.elementos:
+                            s = str(int(e)).zfill(larg2)
+                            if int(e) in set(chave):
+                                partes.append(f"<span style='color:#e67e00;font-weight:bold'>{s}</span>")
+                            else:
+                                partes.append(s)
+                        st.markdown(
+                            f"**{nome}** = " + "{" + ", ".join(partes) + "}",
+                            unsafe_allow_html=True
+                        )
+
+
+# ====================================================================== #
+#  Nova comparação a partir de um grupo colado                            #
+# ====================================================================== #
+
+st.divider()
+st.subheader("📋 Nova comparação a partir de grupo colado")
+st.caption(
+    "Cole os elementos comuns de um grupo gerado pela comparação anterior. "
+    "O sistema filtra os CBs que contêm esse grupo e compara entre si."
+)
+
+col_nc1, col_nc2, col_nc3 = st.columns([5, 1, 1])
+with col_nc1:
+    grupo_colado = st.text_input(
+        "Cole o grupo aqui (ex: {01, 02, 03, ...} ou 01, 02, 03, ...):",
+        placeholder="{01, 02, 03, 04, 05, 08, 09, 14, 15, 17, 20, 21, 22, 23, 24}",
+        key="grupo_colado"
+    )
+with col_nc2:
+    k_nova = st.number_input("Novo K", min_value=1, value=14, step=1, key="nova_comp_k")
+with col_nc3:
+    min_nova = st.number_input("≥ pares", min_value=1, value=2, step=1, key="nova_comp_min")
+
+nova_comp = st.button("🔁 Comparar grupo", key="btn_nova_comp", use_container_width=False, type="primary")
+
+if nova_comp:
+    if not grupo_colado.strip():
+        st.warning("Cole um grupo para comparar.")
+    elif st.session_state.conjuntos is None:
+        st.warning("Execute a verificação principal primeiro.")
+    else:
+        try:
+            nums_colados = parsear_numeros(grupo_colado)
+            if not nums_colados:
+                st.error("Nenhum número reconhecido no grupo colado.")
+            else:
+                with st.spinner("Filtrando CBs e comparando..."):
+                    cbs_filtrados = filtrar_cbs_por_grupo(nums_colados, st.session_state.conjuntos)
+                    if not cbs_filtrados:
+                        st.info(f"Nenhum CB contém todos os elementos {sorted(nums_colados)}.")
+                    else:
+                        n_f = len(cbs_filtrados)
+                        grupos_nova = comparar_cbs_entre_si(int(k_nova), cbs_filtrados)
+                        st.session_state["resultado_nova_comp"] = {
+                            "grupos"      : grupos_nova,
+                            "k"           : int(k_nova),
+                            "min_pares"   : int(min_nova),
+                            "n_filtrados" : n_f,
+                            "grupo_origem": sorted(nums_colados),
+                        }
+        except ValueError as e:
+            st.error(f"Entrada inválida: {e}")
+
+if st.session_state.get("resultado_nova_comp"):
+    rnc       = st.session_state["resultado_nova_comp"]
+    grupos_nc = rnc["grupos"]
+    k_nc      = rnc["k"]
+    mp_nc     = rnc["min_pares"]
+    n_f_nc    = rnc["n_filtrados"]
+    orig      = rnc["grupo_origem"]
+    filtrados_nc = [g for g in grupos_nc if len(g["pares"]) >= mp_nc]
+    total_nc  = sum(len(g["pares"]) for g in grupos_nc)
+
+    larg_orig = len(str(max(orig))) if orig else 2
+    orig_str  = "{" + ", ".join(str(x).zfill(larg_orig) for x in orig) + "}"
+
+    st.subheader("📊 Resultado da nova comparação")
+    st.markdown(f"**Grupo de origem:** `{orig_str}`")
+    cn1, cn2, cn3, cn4 = st.columns(4)
+    cn1.metric("CBs que contêm o grupo",    n_f_nc)
+    cn2.metric("Grupos únicos encontrados",  f"{len(grupos_nc):,}")
+    cn3.metric(f"Total pares com {k_nc} id.", f"{total_nc:,}")
+    cn4.metric(f"Grupos com ≥{mp_nc} pares", f"{len(filtrados_nc):,}")
+
+    if not filtrados_nc:
+        st.info("Nenhum grupo com esse critério.")
+    else:
+        larg_nc = len(str(max(e for g in filtrados_nc for e in g["elementos_comuns"])))
+        for g_idx, grupo in enumerate(filtrados_nc, start=1):
+            chave  = grupo["elementos_comuns"]
+            pares  = grupo["pares"]
+            cbs    = sorted(grupo["cbs"])
+            ch_str = "{" + ", ".join(str(x).zfill(larg_nc) for x in chave) + "}"
+            label  = (f"Grupo {g_idx} — {ch_str} "
+                      f"| {len(pares)} par(es) | CBs: {', '.join(cbs)}")
+            with st.expander(label, expanded=False):
+                for ni, ci, nj, cj in pares:
+                    st.markdown(f"**{ni} × {nj}**")
+                    for nome, conj in [(ni, ci), (nj, cj)]:
+                        partes = []
+                        larg2  = len(str(max(abs(int(e)) for e in conj.elementos)))
+                        for e in conj.elementos:
+                            s = str(int(e)).zfill(larg2)
+                            if int(e) in set(chave):
+                                partes.append(f"<span style='color:#e67e00;font-weight:bold'>{s}</span>")
+                            else:
+                                partes.append(s)
+                        st.markdown(
+                            f"**{nome}** = " + "{" + ", ".join(partes) + "}",
+                            unsafe_allow_html=True
+                        )

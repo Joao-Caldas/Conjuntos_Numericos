@@ -452,3 +452,120 @@ def buscar_grupos_e_verificar_contencao(numeros: set, k: int, conjuntos: list) -
     # Ordena por quantidade de CBs que contêm (maior primeiro)
     grupos_resultado.sort(key=lambda x: len(x['cbs_contem']), reverse=True)
     return grupos_resultado
+
+
+def buscar_todos_grupos_possiveis(numeros: set, k: int, conjuntos: list) -> list:
+    """
+    Para cada CB, considera TODAS as sub-combinações de k elementos da
+    sua interseção com 'numeros' (não apenas os que têm exatamente k).
+
+    Um CB com interseção de tamanho m >= k contribui com C(m, k) grupos.
+
+    Retorna lista de dicts ordenada por quantidade de CBs (desc):
+      {
+        'grupo_elementos': tuple,   # os k elementos do grupo
+        'cbs_contem'     : list,    # (nome, conj) dos CBs que contêm o grupo
+      }
+    """
+    from itertools import combinations
+    from collections import defaultdict
+
+    grupos_dict = defaultdict(list)
+
+    for nome, conj in conjuntos:
+        em_comum = sorted(set(conj.elementos) & numeros)
+        if len(em_comum) >= k:
+            for combo in combinations(em_comum, k):
+                grupos_dict[combo].append((nome, conj))
+
+    grupos = [
+        {"grupo_elementos": chave, "cbs_contem": cbs}
+        for chave, cbs in grupos_dict.items()
+    ]
+    grupos.sort(key=lambda x: len(x["cbs_contem"]), reverse=True)
+    return grupos
+
+
+def comparar_cbs_entre_si(k: int, conjuntos: list) -> list:
+    """
+    Compara todos os pares de CBs e agrupa os que compartilham
+    EXATAMENTE k elementos idênticos entre si (interseção par a par).
+
+    Parâmetros:
+      k         — número exato de elementos em comum exigido
+      conjuntos — lista de tuplas (nome, ConjuntoNumerico)
+
+    Retorna lista de dicts ordenada por quantidade de pares (desc):
+      {
+        'elementos_comuns': tuple,            # os k elementos compartilhados
+        'pares'           : [(ni,ci,nj,cj)],  # todos os pares que os compartilham
+        'cbs'             : set,              # nomes únicos dos CBs envolvidos
+      }
+    """
+    from itertools import combinations
+    from collections import defaultdict
+
+    grupos = defaultdict(list)
+
+    for (nome_i, conj_i), (nome_j, conj_j) in combinations(conjuntos, 2):
+        intersecao = set(conj_i.elementos) & set(conj_j.elementos)
+        if len(intersecao) == k:
+            chave = tuple(sorted(intersecao))
+            grupos[chave].append((nome_i, conj_i, nome_j, conj_j))
+
+    resultado = [
+        {
+            "elementos_comuns": chave,
+            "pares"           : pares,
+            "cbs"             : set(n for p in pares for n in (p[0], p[2])),
+        }
+        for chave, pares in grupos.items()
+    ]
+    resultado.sort(key=lambda x: len(x["pares"]), reverse=True)
+    return resultado
+
+
+def comparar_dois_conjuntos(k: int, conjuntos_a: list, conjuntos_b: list) -> list:
+    """
+    Compara cada CB do conjunto A contra cada CB do conjunto B,
+    agrupando os pares que têm EXATAMENTE k elementos idênticos.
+
+    Retorna lista de dicts ordenada por quantidade de pares (desc):
+      {
+        'elementos_comuns': tuple,
+        'pares'           : [(nome_a, conj_a, nome_b, conj_b)],
+        'cbs_a'           : set de nomes do conjunto A envolvidos,
+        'cbs_b'           : set de nomes do conjunto B envolvidos,
+      }
+    """
+    from collections import defaultdict
+
+    grupos = defaultdict(list)
+
+    for nome_a, conj_a in conjuntos_a:
+        set_a = set(conj_a.elementos)
+        for nome_b, conj_b in conjuntos_b:
+            intersecao = set_a & set(conj_b.elementos)
+            if len(intersecao) == k:
+                chave = tuple(sorted(intersecao))
+                grupos[chave].append((nome_a, conj_a, nome_b, conj_b))
+
+    resultado = [
+        {
+            "elementos_comuns": chave,
+            "pares"           : pares,
+            "cbs_a"           : set(p[0] for p in pares),
+            "cbs_b"           : set(p[2] for p in pares),
+        }
+        for chave, pares in grupos.items()
+    ]
+    resultado.sort(key=lambda x: len(x["pares"]), reverse=True)
+    return resultado
+
+
+def filtrar_cbs_por_grupo(grupo_elementos: set, conjuntos: list) -> list:
+    """
+    Retorna apenas os CBs que contêm todos os elementos do grupo como subconjunto.
+    """
+    ref = ConjuntoNumerico(sorted(grupo_elementos))
+    return [(nome, conj) for nome, conj in conjuntos if ref.subconjunto(conj)]
