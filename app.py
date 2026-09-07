@@ -37,6 +37,7 @@ from main import (
     comparar_cbs_entre_si,
     comparar_dois_conjuntos,
     filtrar_cbs_por_grupo,
+    extrair_cbs_do_texto,
 )
 
 
@@ -177,22 +178,6 @@ class App(tk.Tk):
         self.btn_cancelar_rodada.pack(side="left", padx=(4, 0))
 
         # ── Área de saída ────────────────────────────────────────────────
-        # ── Busca por coincidência parcial ───────────────────────────────
-        frame_busca_parcial = ttk.LabelFrame(container, text="Busca por coincidência parcial", padding=8)
-        frame_busca_parcial.pack(fill="x", pady=(0, 6))
-
-        ttk.Label(frame_busca_parcial, text="Números (ex: 01, 02, 03):").grid(row=0, column=0, sticky="w", padx=(0, 6))
-        self.ent_parcial_nums = ttk.Entry(frame_busca_parcial, width=60)
-        self.ent_parcial_nums.grid(row=0, column=1, sticky="ew", padx=(0, 10))
-        frame_busca_parcial.columnconfigure(1, weight=1)
-
-        ttk.Label(frame_busca_parcial, text="Coincidências exatas:").grid(row=0, column=2, sticky="w", padx=(0, 6))
-        self.ent_parcial_k = ttk.Entry(frame_busca_parcial, width=6)
-        self.ent_parcial_k.insert(0, "15")
-        self.ent_parcial_k.grid(row=0, column=3, sticky="w", padx=(0, 10))
-
-        ttk.Button(frame_busca_parcial, text="🔍 Buscar",
-                   command=self._buscar_parcial).grid(row=0, column=4, sticky="w", padx=(0,4))
 
 
         # ── Verificação de grupo manual ──────────────────────────────────
@@ -201,7 +186,7 @@ class App(tk.Tk):
         )
         frame_grupo_manual.pack(fill="x", pady=(0, 6))
 
-        ttk.Label(frame_grupo_manual, text="Números do grupo:").grid(
+        ttk.Label(frame_grupo_manual, text="Números ou IDs (CB1, CB2...):").grid(
             row=0, column=0, sticky="w", padx=(0, 6)
         )
         self.ent_grupo_manual = ttk.Entry(frame_grupo_manual, width=60)
@@ -473,17 +458,20 @@ class App(tk.Tk):
         try:
             k_nova  = int(self.ent_nova_k.get().strip())
             mn_nova = int(self.ent_nova_min.get().strip())
-            nums    = parsear_numeros(texto)
         except ValueError as e:
             messagebox.showerror("Erro", str(e))
             return
 
         conjuntos = self._conjuntos_atuais
-        cbs_filt  = filtrar_cbs_por_grupo(nums, conjuntos)
+        cbs_filt  = extrair_cbs_do_texto(texto, conjuntos)
 
         if not cbs_filt:
             messagebox.showinfo("Resultado",
-                f"Nenhum CB contém todos os {len(nums)} elementos do grupo colado.")
+                "Nenhum CB encontrado no texto colado.\n\n"
+                "Formatos aceitos:\n"
+                "• Bloco completo do output (com CB447 × CB694 ...)\n"
+                "• Lista de IDs: CB1, CB2, CB3, ...\n"
+                "• Números: 01, 02, 03, ...")
             return
 
         n_f = len(cbs_filt)
@@ -503,13 +491,13 @@ class App(tk.Tk):
             except Exception:
                 pass
             finally:
-                fila.put((grupos, k_nova, mn_nova, sorted(nums), cbs_filt))
+                fila.put((grupos, k_nova, mn_nova, cbs_filt))
 
         threading.Thread(target=_trabalho, daemon=True).start()
 
         def _poll():
             try:
-                grupos, _k, _mn, _orig, _cbs = fila.get_nowait()
+                grupos, _k, _mn, _cbs = fila.get_nowait()
             except __import__("queue").Empty:
                 self.after(200, _poll)
                 return
@@ -517,9 +505,6 @@ class App(tk.Tk):
             SEP      = "─" * 52
             filtrados = [g for g in grupos if len(g["pares"]) >= _mn]
             total_p   = sum(len(g["pares"]) for g in grupos)
-            larg_orig = len(str(max(_orig))) if _orig else 2
-            orig_str  = "{" + ", ".join(str(x).zfill(larg_orig) for x in _orig) + "}"
-
             self.txt_saida.tag_config("grupo_header",
                 foreground="#1a6fbe", font=("Consolas", 10, "bold"))
             self.txt_saida.tag_config("parcial_match",
@@ -530,8 +515,8 @@ class App(tk.Tk):
             w("\n" + "═" * 52 + "\n")
             w("   NOVA COMPARAÇÃO — GRUPO COLADO\n")
             w("═" * 52 + "\n")
-            w(f"  Grupo de origem : {orig_str}\n")
-            w(f"  CBs que o contêm: {len(_cbs)}\n")
+            nomes_filt = ', '.join(n for n, _ in _cbs)
+            w(f"  CBs selecionados ({len(_cbs)}): {nomes_filt}\n")
             w(f"  Novo K          : {_k}\n")
             w(f"  Grupos únicos   : {len(grupos):,}\n")
             w(f"  Total pares     : {total_p:,}\n")
@@ -674,8 +659,9 @@ class App(tk.Tk):
 
     def _verificar_grupo_manual(self):
         """
-        Verifica quais CBs contêm o grupo digitado manualmente como subconjunto,
-        sem depender de ter sido gerado pela busca parcial.
+        Aceita:
+          • CB IDs  → define esses CBs como novo conjunto base
+          • Números → verifica quais CBs os contêm (comportamento original)
         """
         if not hasattr(self, "_conjuntos_atuais") or not self._conjuntos_atuais:
             messagebox.showwarning("Atenção", "Execute a verificação principal primeiro.")
@@ -683,61 +669,91 @@ class App(tk.Tk):
 
         texto = self.ent_grupo_manual.get().strip()
         if not texto:
-            messagebox.showwarning("Atenção", "Digite os números do grupo.")
+            messagebox.showwarning("Atenção", "Digite ou cole os dados no campo.")
             return
 
-        try:
-            nums_gm = parsear_numeros(texto)
-            ref_gm  = ConjuntoNumerico(sorted(nums_gm))
-        except ValueError as e:
-            messagebox.showerror("Entrada inválida", str(e))
-            return
+        import re as _re
+        tem_ids = bool(_re.search(r"CB\d+", texto))
 
-        conjuntos  = self._conjuntos_atuais
-        encontrados = [(nome, conj) for nome, conj in conjuntos if ref_gm.subconjunto(conj)]
+        if tem_ids:
+            # CB IDs → atualiza conjunto base
+            cbs = extrair_cbs_do_texto(texto, self._conjuntos_atuais)
+            if not cbs:
+                messagebox.showwarning("Atenção", "Nenhum CB reconhecido no texto colado.")
+                return
 
-        SEP      = "─" * 52
-        larg_gm  = len(str(max(nums_gm))) if nums_gm else 2
-        grupo_str = "{" + ", ".join(str(x).zfill(larg_gm) for x in sorted(nums_gm)) + "}"
+            self._conjuntos_atuais = cbs
+            nomes = ", ".join(n for n, _ in cbs)
+            self.txt_saida.delete("1.0", tk.END)
+            w = lambda t, tag="": self.txt_saida.insert(tk.END, t, tag)
+            self.txt_saida.tag_config("grupo_header",
+                foreground="#1a6fbe", font=("Consolas", 10, "bold"))
+            w("\n" + "═" * 52 + "\n")
+            w("   NOVO CONJUNTO BASE DEFINIDO\n")
+            w("═" * 52 + "\n")
+            w(f"  {len(cbs)} conjuntos selecionados:\n", "grupo_header")
+            w(f"  {nomes}\n")
+            w("\n  ✔ Todas as operações agora usam esses CBs.\n")
+            w("    (busca parcial, comparação, etc.)\n")
+            self.txt_saida.see("1.0")
+            self.lbl_status.config(
+                text=f"Novo conjunto base: {len(cbs)} CB(s) — {nomes[:60]}{'...' if len(nomes)>60 else ''}"
+            )
 
-        self.txt_saida.delete("1.0", tk.END)
-        self.txt_saida.tag_config("parcial_match",
-            foreground="#e67e00", font=("Consolas", 10, "bold"))
-        self.txt_saida.tag_config("grupo_header",
-            foreground="#1a6fbe", font=("Consolas", 10, "bold"))
-
-        w = lambda t, tag="": self.txt_saida.insert(tk.END, t, tag)
-
-        w("\n" + "═" * 52 + "\n")
-        w("   VERIFICAÇÃO DE GRUPO MANUAL\n")
-        w("═" * 52 + "\n")
-        w(f"  Grupo     : {grupo_str}\n")
-        w(f"  Tamanho   : {len(nums_gm)} elementos\n")
-        w(f"  CBs verificados: {len(conjuntos)}\n")
-        w(f"  CBs que contêm: {len(encontrados)}\n")
-        w(SEP + "\n")
-
-        if not encontrados:
-            w("\n  Nenhum CB contém esse grupo como subconjunto.\n")
         else:
-            for i, (nome, conj) in enumerate(encontrados, start=1):
-                w(f"\n  {i}. {nome}\n")
-                w(f"    conjunto = {{")
-                larg = len(str(max(abs(int(e)) for e in conj.elementos)))
-                for j, e in enumerate(conj.elementos):
-                    s   = str(int(e)).zfill(larg)
-                    tag = "parcial_match" if int(e) in nums_gm else ""
-                    w(s, tag)
-                    if j < len(conj.elementos) - 1:
-                        w(", ")
-                w("}\n")
-                em_str = ", ".join(str(x).zfill(larg_gm) for x in sorted(nums_gm))
-                w(f"    em comum  = {{{em_str}}}\n")
+            # Números → verifica contenção (comportamento original)
+            try:
+                nums_gm = parsear_numeros(texto)
+                ref_gm  = ConjuntoNumerico(sorted(nums_gm))
+            except ValueError as e:
+                messagebox.showerror("Entrada inválida", str(e))
+                return
 
-        self.txt_saida.see("1.0")
-        self.lbl_status.config(
-            text=f"Grupo manual: {len(encontrados)} CB(s) contêm o grupo (de {len(conjuntos)})."
-        )
+            conjuntos   = self._conjuntos_atuais
+            encontrados = [(nome, conj) for nome, conj in conjuntos if ref_gm.subconjunto(conj)]
+
+            SEP      = "─" * 52
+            larg_gm  = len(str(max(nums_gm))) if nums_gm else 2
+            grupo_str = "{" + ", ".join(str(x).zfill(larg_gm) for x in sorted(nums_gm)) + "}"
+
+            self.txt_saida.delete("1.0", tk.END)
+            self.txt_saida.tag_config("parcial_match",
+                foreground="#e67e00", font=("Consolas", 10, "bold"))
+            self.txt_saida.tag_config("grupo_header",
+                foreground="#1a6fbe", font=("Consolas", 10, "bold"))
+
+            w = lambda t, tag="": self.txt_saida.insert(tk.END, t, tag)
+
+            w("\n" + "═" * 52 + "\n")
+            w("   VERIFICAÇÃO DE GRUPO ESPECÍFICO\n")
+            w("═" * 52 + "\n")
+            w(f"  Grupo     : {grupo_str}\n")
+            w(f"  Tamanho   : {len(nums_gm)} elementos\n")
+            w(f"  Verificado em: {len(conjuntos)} CBs\n")
+            w(f"  CBs que contêm: {len(encontrados)}\n")
+            w(SEP + "\n")
+
+            if not encontrados:
+                w("\n  Nenhum CB contém esse grupo.\n")
+            else:
+                for i, (nome, conj) in enumerate(encontrados, start=1):
+                    w(f"\n  {i}. {nome}\n")
+                    w(f"    conjunto = {{")
+                    larg = len(str(max(abs(int(e)) for e in conj.elementos)))
+                    for j, e in enumerate(conj.elementos):
+                        s   = str(int(e)).zfill(larg)
+                        tag = "parcial_match" if int(e) in nums_gm else ""
+                        w(s, tag)
+                        if j < len(conj.elementos) - 1:
+                            w(", ")
+                    w("}\n")
+                    em_str = ", ".join(str(x).zfill(larg_gm) for x in sorted(nums_gm))
+                    w(f"    em comum  = {{{em_str}}}\n")
+
+            self.txt_saida.see("1.0")
+            self.lbl_status.config(
+                text=f"Grupo: {len(encontrados)} CB(s) contêm o grupo (de {len(conjuntos)})."
+            )
 
     def _buscar_parcial(self):
         """

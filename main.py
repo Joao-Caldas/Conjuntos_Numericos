@@ -478,12 +478,21 @@ def buscar_todos_grupos_possiveis(numeros: set, k: int, conjuntos: list) -> list
             for combo in combinations(em_comum, k):
                 grupos_dict[combo].append((nome, conj))
 
-    grupos = [
-        {"grupo_elementos": chave, "cbs_contem": cbs}
-        for chave, cbs in grupos_dict.items()
-    ]
-    grupos.sort(key=lambda x: len(x["cbs_contem"]), reverse=True)
-    return grupos
+    # cbs_busca: CBs cuja interseção com numeros é EXATAMENTE esse grupo
+    resultado = []
+    for chave, cbs_contem in grupos_dict.items():
+        chave_set = set(chave)
+        cbs_busca = [
+            (nome, conj) for nome, conj in cbs_contem
+            if set(conj.elementos) & numeros == chave_set
+        ]
+        resultado.append({
+            "grupo_elementos": chave,
+            "cbs_contem"     : cbs_contem,
+            "cbs_busca"      : cbs_busca,
+        })
+    resultado.sort(key=lambda x: len(x["cbs_contem"]), reverse=True)
+    return resultado
 
 
 def comparar_cbs_entre_si(k: int, conjuntos: list) -> list:
@@ -569,3 +578,34 @@ def filtrar_cbs_por_grupo(grupo_elementos: set, conjuntos: list) -> list:
     """
     ref = ConjuntoNumerico(sorted(grupo_elementos))
     return [(nome, conj) for nome, conj in conjuntos if ref.subconjunto(conj)]
+
+
+import re as _re
+
+def extrair_cbs_do_texto(texto: str, conjuntos: list) -> list:
+    """
+    Extrai CBs do texto colado. Aceita três formatos:
+      1. Bloco completo do output (ex: CB447 × CB694 \\n CB447 = {...} ...)
+      2. Lista de IDs  (ex: CB1198, CB1572, CB1581, ...)
+      3. Números soltos (ex: 01, 02, 03, ... → filtra por contenção)
+
+    Retorna lista de (nome, ConjuntoNumerico) dos CBs encontrados.
+    """
+    # Tenta extrair IDs de CBs (CB seguido de dígitos)
+    ids_encontrados = _re.findall(r'CB\d+', texto)
+
+    if ids_encontrados:
+        ids_unicos = list(dict.fromkeys(ids_encontrados))  # preserva ordem, remove dup
+        mapa = {nome: conj for nome, conj in conjuntos}
+        resultado = [(nome, mapa[nome]) for nome in ids_unicos if nome in mapa]
+        return resultado
+
+    # Fallback: trata como números e filtra por contenção
+    try:
+        nums = parsear_numeros(texto)
+        if nums:
+            return filtrar_cbs_por_grupo(nums, conjuntos)
+    except Exception:
+        pass
+
+    return []

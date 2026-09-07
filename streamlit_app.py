@@ -22,6 +22,7 @@ from main import (
     buscar_todos_grupos_possiveis,
     comparar_cbs_entre_si,
     filtrar_cbs_por_grupo,
+    extrair_cbs_do_texto,
 )
 
 
@@ -388,9 +389,13 @@ if st.session_state.grupos_parciais is not None:
             larg_c    = len(str(max(chave))) if chave else 2
             chave_str = "{" + ", ".join(str(x).zfill(larg_c) for x in chave) + "}"
 
+            cbs_busca_g = grupo.get("cbs_busca", [])
+            n_super_g   = len(cbs_contem) - len(cbs_busca_g)
             label = (
                 f"Grupo {g_idx} — {chave_str} "
-                f"| {len(cbs_contem)} CBs que contêm (de {total_cbs})"
+                f"| {len(cbs_busca_g)} com exatamente {k_val} "
+                f"| +{n_super_g} superconjuntos "
+                f"| {len(cbs_contem)} total (de {total_cbs})"
             )
 
             with st.expander(label, expanded=False):
@@ -406,48 +411,66 @@ if st.session_state.grupos_parciais is not None:
 # ====================================================================== #
 
 st.divider()
-st.subheader("🎯 Verificar grupo específico")
+st.subheader("🎯 Verificar grupo / Definir nova base")
 st.caption(
-    "Digite qualquer combinação de números e veja quais CBs a contêm — "
-    "independente de ter sido gerada pela busca parcial."
+    "**CB IDs** (ex: CB1, CB2, CB3) → define esses CBs como novo conjunto base para todas as operações.  "
+    "**Números** (ex: 01, 02, 03) → verifica quais CBs contêm esse grupo."
 )
 
 col_gm1, col_gm2 = st.columns([5, 1])
 with col_gm1:
     texto_grupo_manual = st.text_input(
-        "Números do grupo (ex: 01, 02, 03, ...):",
-        placeholder="01, 02, 03, 04, 05, 08, 09, 14, 15, 17, 20, 21, 22, 23, 24",
+        "CB IDs ou números do grupo:",
+        placeholder="CB1198, CB1572, CB1784 ...  ou  01, 02, 03, 04, 05, 08",
         key="grupo_manual_nums"
     )
 with col_gm2:
     st.write(""); st.write("")
-    verificar_grupo = st.button("🎯 Verificar", key="btn_grupo_manual", use_container_width=True)
+    verificar_grupo = st.button("🎯 Aplicar", key="btn_grupo_manual", use_container_width=True)
 
 if verificar_grupo:
     if not texto_grupo_manual.strip():
-        st.warning("Digite os números do grupo.")
+        st.warning("Digite CB IDs ou números.")
     elif st.session_state.conjuntos is None:
-        st.warning("Execute a verificação principal primeiro para carregar os conjuntos base.")
+        st.warning("Execute a verificação principal primeiro.")
     else:
-        try:
-            nums_gm  = parsear_numeros(texto_grupo_manual)
-            ref_gm   = ConjuntoNumerico(sorted(nums_gm))
-            total_cbs = len(st.session_state.conjuntos)
+        import re as _re
+        tem_ids = bool(_re.search(r"CB\d+", texto_grupo_manual))
 
-            with st.spinner(f"Verificando em {total_cbs} CBs..."):
-                encontrados = [
-                    (nome, conj)
-                    for nome, conj in st.session_state.conjuntos
-                    if ref_gm.subconjunto(conj)
-                ]
+        if tem_ids:
+            cbs = extrair_cbs_do_texto(texto_grupo_manual, st.session_state.conjuntos)
+            if not cbs:
+                st.warning("Nenhum CB reconhecido no texto colado.")
+            else:
+                st.session_state.conjuntos = cbs
+                nomes = ", ".join(n for n, _ in cbs)
+                st.success(
+                    f"✔ Novo conjunto base: **{len(cbs)} CB(s)** — {nomes}  \n"
+                    "Todas as operações (busca parcial, comparação, etc.) agora usam esses CBs."
+                )
+                st.session_state["resultado_grupo_manual"] = None
+                st.session_state["resultado_comparacao"]   = None
+                st.session_state["grupos_parciais"]        = None
+        else:
+            try:
+                nums_gm   = parsear_numeros(texto_grupo_manual)
+                ref_gm    = ConjuntoNumerico(sorted(nums_gm))
+                total_cbs = len(st.session_state.conjuntos)
 
-            st.session_state["resultado_grupo_manual"] = {
-                "grupo"      : sorted(nums_gm),
-                "encontrados": encontrados,
-                "total_cbs"  : total_cbs,
-            }
-        except ValueError as e:
-            st.error(f"Entrada inválida: {e}")
+                with st.spinner(f"Verificando em {total_cbs} CBs..."):
+                    encontrados = [
+                        (nome, conj)
+                        for nome, conj in st.session_state.conjuntos
+                        if ref_gm.subconjunto(conj)
+                    ]
+
+                st.session_state["resultado_grupo_manual"] = {
+                    "grupo"      : sorted(nums_gm),
+                    "encontrados": encontrados,
+                    "total_cbs"  : total_cbs,
+                }
+            except ValueError as e:
+                st.error(f"Entrada inválida: {e}")
 
 if st.session_state.get("resultado_grupo_manual"):
     rgm       = st.session_state["resultado_grupo_manual"]
@@ -587,26 +610,28 @@ if nova_comp:
         st.warning("Execute a verificação principal primeiro.")
     else:
         try:
-            nums_colados = parsear_numeros(grupo_colado)
-            if not nums_colados:
-                st.error("Nenhum número reconhecido no grupo colado.")
+            cbs_filtrados = extrair_cbs_do_texto(grupo_colado, st.session_state.conjuntos)
+            if not cbs_filtrados:
+                st.warning(
+                    "Nenhum CB encontrado no texto colado.\n\n"
+                    "Formatos aceitos:\n"
+                    "• Bloco completo do output (com CB447 × CB694 ...)\n"
+                    "• Lista de IDs: CB1, CB2, CB3, ...\n"
+                    "• Números: 01, 02, 03, ..."
+                )
             else:
-                with st.spinner("Filtrando CBs e comparando..."):
-                    cbs_filtrados = filtrar_cbs_por_grupo(nums_colados, st.session_state.conjuntos)
-                    if not cbs_filtrados:
-                        st.info(f"Nenhum CB contém todos os elementos {sorted(nums_colados)}.")
-                    else:
-                        n_f = len(cbs_filtrados)
-                        grupos_nova = comparar_cbs_entre_si(int(k_nova), cbs_filtrados)
-                        st.session_state["resultado_nova_comp"] = {
-                            "grupos"      : grupos_nova,
-                            "k"           : int(k_nova),
-                            "min_pares"   : int(min_nova),
-                            "n_filtrados" : n_f,
-                            "grupo_origem": sorted(nums_colados),
-                        }
-        except ValueError as e:
-            st.error(f"Entrada inválida: {e}")
+                n_f = len(cbs_filtrados)
+                with st.spinner(f"Comparando {n_f*(n_f-1)//2:,} pares entre {n_f} CBs..."):
+                    grupos_nova = comparar_cbs_entre_si(int(k_nova), cbs_filtrados)
+                st.session_state["resultado_nova_comp"] = {
+                    "grupos"      : grupos_nova,
+                    "k"           : int(k_nova),
+                    "min_pares"   : int(min_nova),
+                    "n_filtrados" : n_f,
+                    "cbs_nomes"   : [n for n, _ in cbs_filtrados],
+                }
+        except Exception as e:
+            st.error(f"Erro: {e}")
 
 if st.session_state.get("resultado_nova_comp"):
     rnc       = st.session_state["resultado_nova_comp"]
@@ -614,15 +639,12 @@ if st.session_state.get("resultado_nova_comp"):
     k_nc      = rnc["k"]
     mp_nc     = rnc["min_pares"]
     n_f_nc    = rnc["n_filtrados"]
-    orig      = rnc["grupo_origem"]
+    cbs_nomes = rnc.get("cbs_nomes", [])
     filtrados_nc = [g for g in grupos_nc if len(g["pares"]) >= mp_nc]
     total_nc  = sum(len(g["pares"]) for g in grupos_nc)
 
-    larg_orig = len(str(max(orig))) if orig else 2
-    orig_str  = "{" + ", ".join(str(x).zfill(larg_orig) for x in orig) + "}"
-
     st.subheader("📊 Resultado da nova comparação")
-    st.markdown(f"**Grupo de origem:** `{orig_str}`")
+    st.markdown(f"**CBs selecionados ({n_f_nc}):** {', '.join(cbs_nomes)}")
     cn1, cn2, cn3, cn4 = st.columns(4)
     cn1.metric("CBs que contêm o grupo",    n_f_nc)
     cn2.metric("Grupos únicos encontrados",  f"{len(grupos_nc):,}")
