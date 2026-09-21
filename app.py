@@ -235,31 +235,31 @@ class App(tk.Tk):
             command=self._comparar_cbs
         ).grid(row=0, column=4, sticky="w")
 
-        # ── Nova comparação a partir de grupo colado ─────────────────────
-        frame_nova_comp = ttk.LabelFrame(
-            container, text="📋 Nova comparação a partir de grupo colado", padding=8
-        )
-        frame_nova_comp.pack(fill="x", pady=(0, 6))
+        # # ── Nova comparação a partir de grupo colado ─────────────────────
+        # frame_nova_comp = ttk.LabelFrame(
+        #     container, text="📋 Nova comparação a partir de grupo colado", padding=8
+        # )
+        # frame_nova_comp.pack(fill="x", pady=(0, 6))
 
-        ttk.Label(frame_nova_comp, text="Cole o grupo:").grid(row=0, column=0, sticky="w", padx=(0,6))
-        self.ent_grupo_colado = ttk.Entry(frame_nova_comp, width=55)
-        self.ent_grupo_colado.grid(row=0, column=1, sticky="ew", padx=(0,8))
-        frame_nova_comp.columnconfigure(1, weight=1)
+        # ttk.Label(frame_nova_comp, text="Cole o grupo:").grid(row=0, column=0, sticky="w", padx=(0,6))
+        # self.ent_grupo_colado = ttk.Entry(frame_nova_comp, width=55)
+        # self.ent_grupo_colado.grid(row=0, column=1, sticky="ew", padx=(0,8))
+        # frame_nova_comp.columnconfigure(1, weight=1)
 
-        ttk.Label(frame_nova_comp, text="Novo K:").grid(row=0, column=2, sticky="w", padx=(0,4))
-        self.ent_nova_k = ttk.Entry(frame_nova_comp, width=5)
-        self.ent_nova_k.insert(0, "14")
-        self.ent_nova_k.grid(row=0, column=3, sticky="w", padx=(0,8))
+        # ttk.Label(frame_nova_comp, text="Novo K:").grid(row=0, column=2, sticky="w", padx=(0,4))
+        # self.ent_nova_k = ttk.Entry(frame_nova_comp, width=5)
+        # self.ent_nova_k.insert(0, "14")
+        # self.ent_nova_k.grid(row=0, column=3, sticky="w", padx=(0,8))
 
-        ttk.Label(frame_nova_comp, text="≥ conjuntos:").grid(row=0, column=4, sticky="w", padx=(0,4))
-        self.ent_nova_min = ttk.Entry(frame_nova_comp, width=5)
-        self.ent_nova_min.insert(0, "2")
-        self.ent_nova_min.grid(row=0, column=5, sticky="w", padx=(0,8))
+        # ttk.Label(frame_nova_comp, text="≥ conjuntos:").grid(row=0, column=4, sticky="w", padx=(0,4))
+        # self.ent_nova_min = ttk.Entry(frame_nova_comp, width=5)
+        # self.ent_nova_min.insert(0, "2")
+        # self.ent_nova_min.grid(row=0, column=5, sticky="w", padx=(0,8))
 
-        ttk.Button(
-            frame_nova_comp, text="🔁 Comparar grupo",
-            command=self._nova_comp_grupo_colado
-        ).grid(row=0, column=6, sticky="w")
+        # ttk.Button(
+        #     frame_nova_comp, text="🔁 Comparar grupo",
+        #     command=self._nova_comp_grupo_colado
+        # ).grid(row=0, column=6, sticky="w")
 
         # ── Label "Resultado:" + barra de busca na mesma linha ────────────
         barra_resultado = ttk.Frame(container)
