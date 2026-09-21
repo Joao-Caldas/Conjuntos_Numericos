@@ -609,3 +609,53 @@ def extrair_cbs_do_texto(texto: str, conjuntos: list) -> list:
         pass
 
     return []
+
+
+def agrupar_cbs_por_subconjunto(k: int, conjuntos: list,
+                                min_cbs: int = 2) -> list:
+    """
+    Para cada CB, gera todos os C(|CB|, k) subconjuntos de tamanho k
+    e agrupa os CBs que compartilham o mesmo subconjunto.
+
+    Não é par-a-par: encontra grupos com qualquer número de CBs,
+    incluindo ímpares e casos onde pares têm interseção > k.
+
+    Otimizado para bases grandes: usa índices inteiros e bytes como chaves.
+
+    Retorna lista de dicts ordenada por nº de CBs (desc):
+      {
+        'elementos_comuns': tuple,
+        'cbs'             : set de nomes,
+        'lista_cbs'       : [(nome, conj), ...],
+      }
+    """
+    from itertools import combinations
+    from collections import defaultdict
+
+    # Índices inteiros em vez de strings — muito mais eficiente em memória
+    nomes  = [nome for nome, _ in conjuntos]
+    conjs  = [conj for _, conj in conjuntos]
+    mapa   = {nome: conj for nome, conj in conjuntos}
+
+    # bytes como chave: 15 bytes por combo vs ~200 bytes de tuple Python
+    contagem = defaultdict(list)   # bytes_key → [idx, idx, ...]
+
+    for idx, conj in enumerate(conjs):
+        els = bytes(sorted(int(e) for e in conj.elementos))
+        for combo in combinations(els, k):
+            contagem[bytes(combo)].append(idx)
+
+    resultado = []
+    for chave_bytes, idxs in contagem.items():
+        idx_unicos = set(idxs)
+        if len(idx_unicos) >= min_cbs:
+            chave   = tuple(chave_bytes)
+            nms     = {nomes[i] for i in idx_unicos}
+            resultado.append({
+                "elementos_comuns": chave,
+                "cbs"             : nms,
+                "lista_cbs"       : [(nomes[i], conjs[i]) for i in idx_unicos],
+            })
+
+    resultado.sort(key=lambda x: len(x["cbs"]), reverse=True)
+    return resultado

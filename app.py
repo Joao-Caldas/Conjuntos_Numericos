@@ -34,7 +34,7 @@ from main import (
     buscar_por_coincidencia,
     buscar_grupos_e_verificar_contencao,
     buscar_todos_grupos_possiveis,
-    comparar_cbs_entre_si,
+    agrupar_cbs_por_subconjunto,
     comparar_dois_conjuntos,
     filtrar_cbs_por_grupo,
     extrair_cbs_do_texto,
@@ -178,6 +178,22 @@ class App(tk.Tk):
         self.btn_cancelar_rodada.pack(side="left", padx=(4, 0))
 
         # ── Área de saída ────────────────────────────────────────────────
+        # ── Busca por coincidência parcial ───────────────────────────────
+        # frame_busca_parcial = ttk.LabelFrame(container, text="Busca por coincidência parcial", padding=8)
+        # frame_busca_parcial.pack(fill="x", pady=(0, 6))
+
+        # ttk.Label(frame_busca_parcial, text="Números (ex: 01, 02, 03):").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        # self.ent_parcial_nums = ttk.Entry(frame_busca_parcial, width=60)
+        # self.ent_parcial_nums.grid(row=0, column=1, sticky="ew", padx=(0, 10))
+        # frame_busca_parcial.columnconfigure(1, weight=1)
+
+        # ttk.Label(frame_busca_parcial, text="Coincidências exatas:").grid(row=0, column=2, sticky="w", padx=(0, 6))
+        # self.ent_parcial_k = ttk.Entry(frame_busca_parcial, width=6)
+        # self.ent_parcial_k.insert(0, "15")
+        # self.ent_parcial_k.grid(row=0, column=3, sticky="w", padx=(0, 10))
+
+        # ttk.Button(frame_busca_parcial, text="🔍 Buscar",
+        #            command=self._buscar_parcial).grid(row=0, column=4, sticky="w", padx=(0,4))
 
 
         # ── Verificação de grupo manual ──────────────────────────────────
@@ -209,7 +225,7 @@ class App(tk.Tk):
         self.ent_comp_k.insert(0, "15")
         self.ent_comp_k.grid(row=0, column=1, sticky="w", padx=(0,10))
 
-        ttk.Label(frame_comparar, text="Mostrar grupos com ≥ pares:").grid(row=0, column=2, sticky="w", padx=(0,6))
+        ttk.Label(frame_comparar, text="Mostrar grupos com ≥ conjuntos:").grid(row=0, column=2, sticky="w", padx=(0,6))
         self.ent_comp_min = ttk.Entry(frame_comparar, width=6)
         self.ent_comp_min.insert(0, "2")
         self.ent_comp_min.grid(row=0, column=3, sticky="w", padx=(0,10))
@@ -235,7 +251,7 @@ class App(tk.Tk):
         self.ent_nova_k.insert(0, "14")
         self.ent_nova_k.grid(row=0, column=3, sticky="w", padx=(0,8))
 
-        ttk.Label(frame_nova_comp, text="≥ pares:").grid(row=0, column=4, sticky="w", padx=(0,4))
+        ttk.Label(frame_nova_comp, text="≥ conjuntos:").grid(row=0, column=4, sticky="w", padx=(0,4))
         self.ent_nova_min = ttk.Entry(frame_nova_comp, width=5)
         self.ent_nova_min.insert(0, "2")
         self.ent_nova_min.grid(row=0, column=5, sticky="w", padx=(0,8))
@@ -245,31 +261,32 @@ class App(tk.Tk):
             command=self._nova_comp_grupo_colado
         ).grid(row=0, column=6, sticky="w")
 
-        ttk.Label(container, text="Resultado:").pack(anchor="w")
+        # ── Label "Resultado:" + barra de busca na mesma linha ────────────
+        barra_resultado = ttk.Frame(container)
+        barra_resultado.pack(fill="x", pady=(0, 2))
+
+        ttk.Label(barra_resultado, text="Resultado:").pack(side="left")
+
+        self.lbl_busca = ttk.Label(barra_resultado, text="", foreground="#555")
+        self.lbl_busca.pack(side="right", padx=(4, 0))
+
+        ttk.Button(barra_resultado, text="▼", width=3,
+                   command=lambda: self._buscar(direcao=1)).pack(side="right", padx=2)
+        ttk.Button(barra_resultado, text="▲", width=3,
+                   command=lambda: self._buscar(direcao=-1)).pack(side="right", padx=2)
+
+        self.ent_busca = ttk.Entry(barra_resultado, width=25)
+        self.ent_busca.pack(side="right", padx=(6, 4))
+        self.ent_busca.bind("<Return>", lambda e: self._buscar(direcao=1))
+        self.ent_busca.bind("<Shift-Return>", lambda e: self._buscar(direcao=-1))
+
+        ttk.Label(barra_resultado, text="🔍 Buscar:").pack(side="right", padx=(8, 0))
         self.txt_saida = scrolledtext.ScrolledText(
             container, wrap="word", font=("Consolas", 10), height=24
         )
         self.txt_saida.pack(fill="both", expand=True, pady=(4, 0))
         self.txt_saida.tag_config("busca", background="#ffe066")
         self.txt_saida.tag_config("busca_atual", background="#ff9900")
-
-        # ── Barra de busca ───────────────────────────────────────────────
-        barra_busca = ttk.Frame(container)
-        barra_busca.pack(fill="x", pady=(6, 0))
-
-        ttk.Label(barra_busca, text="🔍 Buscar:").pack(side="left")
-        self.ent_busca = ttk.Entry(barra_busca, width=30)
-        self.ent_busca.pack(side="left", padx=(6, 4))
-        self.ent_busca.bind("<Return>", lambda e: self._buscar(direcao=1))
-        self.ent_busca.bind("<Shift-Return>", lambda e: self._buscar(direcao=-1))
-
-        ttk.Button(barra_busca, text="▲", width=3,
-                   command=lambda: self._buscar(direcao=-1)).pack(side="left", padx=2)
-        ttk.Button(barra_busca, text="▼", width=3,
-                   command=lambda: self._buscar(direcao=1)).pack(side="left", padx=2)
-
-        self.lbl_busca = ttk.Label(barra_busca, text="", foreground="#555")
-        self.lbl_busca.pack(side="left", padx=8)
 
         self._ocorrencias_busca = []
         self._idx_busca = -1
@@ -487,7 +504,7 @@ class App(tk.Tk):
         def _trabalho():
             grupos = []
             try:
-                grupos = comparar_cbs_entre_si(k_nova, cbs_filt)
+                grupos = agrupar_cbs_por_subconjunto(k_nova, cbs_filt, min_cbs=1)
             except Exception:
                 pass
             finally:
@@ -503,8 +520,8 @@ class App(tk.Tk):
                 return
 
             SEP      = "─" * 52
-            filtrados = [g for g in grupos if len(g["pares"]) >= _mn]
-            total_p   = sum(len(g["pares"]) for g in grupos)
+            filtrados = [g for g in grupos if len(g["cbs"]) >= _mn]
+            total_p   = sum(len(g.get("lista_cbs", [])) for g in grupos)
             self.txt_saida.tag_config("grupo_header",
                 foreground="#1a6fbe", font=("Consolas", 10, "bold"))
             self.txt_saida.tag_config("parcial_match",
@@ -519,8 +536,8 @@ class App(tk.Tk):
             w(f"  CBs selecionados ({len(_cbs)}): {nomes_filt}\n")
             w(f"  Novo K          : {_k}\n")
             w(f"  Grupos únicos   : {len(grupos):,}\n")
-            w(f"  Total pares     : {total_p:,}\n")
-            w(f"  Exibindo (≥{_mn} pares): {len(filtrados):,}\n")
+            w(f"  Total membros   : {total_p:,}\n")
+            w(f"  Exibindo (≥{_mn} conjuntos): {len(filtrados):,}\n")
 
             if not filtrados:
                 w("\n  Nenhum grupo com esse critério.\n")
@@ -528,31 +545,29 @@ class App(tk.Tk):
                 larg = len(str(max(e for g in filtrados for e in g["elementos_comuns"])))
                 for g_idx, grupo in enumerate(filtrados, start=1):
                     chave  = grupo["elementos_comuns"]
-                    pares  = grupo["pares"]
                     cbs_g  = sorted(grupo["cbs"])
                     ch_str = "{" + ", ".join(str(x).zfill(larg) for x in chave) + "}"
                     w(f"\n{SEP}\n")
                     w(f"  Grupo {g_idx}  —  {ch_str}\n", "grupo_header")
-                    w(f"  {len(pares)} par(es) | CBs: {', '.join(cbs_g)}\n", "grupo_header")
+                    w(f"  {len(cbs_g)} conjuntos: {', '.join(cbs_g)}\n", "grupo_header")
                     w(f"{SEP}\n")
-                    for ni, ci, nj, cj in pares:
-                        w(f"\n  {ni} × {nj}\n")
-                        for nome, conj in [(ni, ci), (nj, cj)]:
-                            w(f"    {nome} = {{")
-                            larg2 = len(str(max(abs(int(e)) for e in conj.elementos)))
-                            for idx2, e in enumerate(conj.elementos):
-                                s   = str(int(e)).zfill(larg2)
-                                tag = "parcial_match" if int(e) in set(chave) else ""
-                                w(s, tag)
-                                if idx2 < len(conj.elementos) - 1:
-                                    w(", ")
-                            w("}\n")
+                    for nome, conj in grupo.get("lista_cbs", []):
+                        w(f"\n  {nome}\n")
+                        w(f"    {nome} = {{")
+                        larg2 = len(str(max(abs(int(e)) for e in conj.elementos)))
+                        for idx2, e in enumerate(conj.elementos):
+                            s   = str(int(e)).zfill(larg2)
+                            tag = "parcial_match" if int(e) in set(chave) else ""
+                            w(s, tag)
+                            if idx2 < len(conj.elementos) - 1:
+                                w(", ")
+                        w("}\n")
 
             self.txt_saida.see("1.0")
             self.btn_executar.state(["!disabled"])
             self.lbl_status.config(
                 text=f"Nova comparação: {len(_cbs)} CBs filtrados · "
-                     f"{len(grupos):,} grupos · {len(filtrados)} exibidos (≥{_mn} pares)."
+                     f"{len(grupos):,} grupos · {len(filtrados)} exibidos (≥{_mn} conjuntos)."
             )
 
         self.after(200, _poll)
@@ -566,46 +581,48 @@ class App(tk.Tk):
             k  = int(self.ent_comp_k.get().strip())
             mn = int(self.ent_comp_min.get().strip())
         except ValueError:
-            messagebox.showerror("Erro", "K e mínimo de pares devem ser inteiros.")
+            messagebox.showerror("Erro", "K e mínimo de conjuntos devem ser inteiros.")
             return
 
         conjuntos = self._conjuntos_atuais
         n = len(conjuntos)
         self.txt_saida.delete("1.0", tk.END)
         self.btn_executar.state(["disabled"])
-        self.lbl_status.config(
-            text=f"Comparando {n*(n-1)//2:,} pares entre {n} conjuntos carregados... aguarde."
-        )
+        self.lbl_status.config(text=f"Agrupando subconjuntos de {n} CBs com K={k}... aguarde.")
 
         import threading, queue as _q
         fila = _q.Queue()
 
         def _trabalho():
             grupos = []
+            erro_msg = ""
             try:
-                grupos = comparar_cbs_entre_si(k, conjuntos)
-            except Exception:
-                pass
+                grupos = agrupar_cbs_por_subconjunto(k, conjuntos, min_cbs=1)
+            except Exception as e:
+                erro_msg = str(e)
             finally:
-                fila.put((grupos, k, mn))
+                fila.put((grupos, k, mn, erro_msg))
 
         threading.Thread(target=_trabalho, daemon=True).start()
 
         def _poll():
             try:
-                grupos, _k, _mn = fila.get_nowait()
+                grupos, _k, _mn, _erro = fila.get_nowait()
             except __import__("queue").Empty:
                 self.after(300, _poll)
                 return
-            self._renderizar_comparacao(grupos, _k, _mn, conjuntos)
+            if _erro:
+                messagebox.showwarning("Erro", _erro)
+            else:
+                self._renderizar_comparacao(grupos, _k, _mn, conjuntos)
             self.btn_executar.state(["!disabled"])
 
         self.after(300, _poll)
 
-    def _renderizar_comparacao(self, grupos, k, min_pares, conjuntos):
+    def _renderizar_comparacao(self, grupos, k, min_cbs, conjuntos):
         SEP = "─" * 52
-        filtrados = [g for g in grupos if len(g["pares"]) >= min_pares]
-        total_pares = sum(len(g["pares"]) for g in grupos)
+        filtrados = [g for g in grupos if len(g["cbs"]) >= min_cbs]
+        total_membros = sum(len(g.get("lista_cbs", [])) for g in grupos)
 
         self.txt_saida.tag_config("grupo_header",
             foreground="#1a6fbe", font=("Consolas", 10, "bold"))
@@ -618,10 +635,10 @@ class App(tk.Tk):
         w("   COMPARAÇÃO ENTRE CBs (PAR A PAR)\n")
         w("═" * 52 + "\n")
         w(f"  K idênticos exatos       : {k}\n")
-        w(f"  Total de pares comparados: {len(conjuntos)*(len(conjuntos)-1)//2:,}\n")
+        w(f"  Total de CBs: {len(conjuntos)}\n")
         w(f"  Grupos únicos encontrados: {len(grupos):,}\n")
-        w(f"  Total de pares com {k} id.: {total_pares:,}\n")
-        w(f"  Exibindo grupos com ≥ {min_pares} pares: {len(filtrados):,}\n")
+        w(f"  Total de membros nos grupos: {total_membros:,}\n")
+        w(f"  Exibindo grupos com ≥ {min_cbs} conjuntos: {len(filtrados):,}\n")
 
         if not filtrados:
             w("\n  Nenhum grupo com esse critério.\n")
@@ -629,32 +646,30 @@ class App(tk.Tk):
             larg = len(str(max(e for g in filtrados for e in g["elementos_comuns"])))
             for g_idx, grupo in enumerate(filtrados, start=1):
                 chave  = grupo["elementos_comuns"]
-                pares  = grupo["pares"]
+                membros = grupo.get("lista_cbs", [])
                 cbs    = sorted(grupo["cbs"])
                 ch_str = "{" + ", ".join(str(x).zfill(larg) for x in chave) + "}"
 
                 w(f"\n{SEP}\n")
                 w(f"  Grupo {g_idx}  —  {ch_str}\n", "grupo_header")
-                w(f"  {len(pares)} par(es)  |  {len(cbs)} CBs únicos: {', '.join(cbs)}\n",
-                  "grupo_header")
+                w(f"  {len(cbs)} conjuntos: {', '.join(cbs)}\n", "grupo_header")
                 w(f"{SEP}\n")
 
-                for ni, ci, nj, cj in pares:
-                    w(f"\n  {ni} × {nj}\n")
-                    for nome, conj in [(ni, ci), (nj, cj)]:
-                        w(f"    {nome} = {{")
-                        larg2 = len(str(max(abs(int(e)) for e in conj.elementos)))
-                        for idx2, e in enumerate(conj.elementos):
-                            s   = str(int(e)).zfill(larg2)
-                            tag = "parcial_match" if int(e) in set(chave) else ""
-                            w(s, tag)
-                            if idx2 < len(conj.elementos) - 1:
-                                w(", ")
-                        w("}\n")
+                for nome, conj in membros:
+                    w(f"\n  {nome}\n")
+                    w(f"    {nome} = {{")
+                    larg2 = len(str(max(abs(int(e)) for e in conj.elementos)))
+                    for idx2, e in enumerate(conj.elementos):
+                        s   = str(int(e)).zfill(larg2)
+                        tag = "parcial_match" if int(e) in set(chave) else ""
+                        w(s, tag)
+                        if idx2 < len(conj.elementos) - 1:
+                            w(", ")
+                    w("}\n")
 
         self.txt_saida.see("1.0")
         self.lbl_status.config(
-            text=f"Comparação: {len(grupos):,} grupos · {total_pares:,} pares · exibindo {len(filtrados):,} com ≥{min_pares} pares."
+            text=f"Comparação: {len(grupos):,} grupos · exibindo {len(filtrados):,} com ≥{min_cbs} conjuntos."
         )
 
     def _verificar_grupo_manual(self):

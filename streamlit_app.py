@@ -20,7 +20,7 @@ from main import (
     parsear_numeros,
     buscar_grupos_e_verificar_contencao,
     buscar_todos_grupos_possiveis,
-    comparar_cbs_entre_si,
+    agrupar_cbs_por_subconjunto,
     filtrar_cbs_por_grupo,
     extrair_cbs_do_texto,
 )
@@ -512,7 +512,7 @@ col_ck1, col_ck2, col_ck3 = st.columns([1, 1, 1])
 with col_ck1:
     k_comp = st.number_input("K idênticos exatos", min_value=1, value=15, step=1, key="comp_k")
 with col_ck2:
-    min_pares = st.number_input("Mostrar grupos com ≥ pares", min_value=1, value=2, step=1, key="comp_min")
+    min_cbs = st.number_input("Mostrar grupos com ≥ conjuntos", min_value=1, value=2, step=1, key="comp_min")
 with col_ck3:
     st.write(""); st.write("")
     comparar = st.button("🔁 Comparar", key="btn_comparar", use_container_width=True)
@@ -523,12 +523,12 @@ if comparar:
     else:
         conj = st.session_state.conjuntos
         n    = len(conj)
-        with st.spinner(f"Comparando {n*(n-1)//2:,} pares entre {n} conjuntos carregados... aguarde."):
-            grupos_comp = comparar_cbs_entre_si(int(k_comp), conj)
+        with st.spinner(f"Agrupando subconjuntos de {n} CBs... aguarde."):
+            grupos_comp = agrupar_cbs_por_subconjunto(int(k_comp), conj, min_cbs=1)
         st.session_state["resultado_comparacao"] = {
             "grupos"    : grupos_comp,
             "k"         : int(k_comp),
-            "min_pares" : int(min_pares),
+            "min_cbs" : int(min_cbs),
             "n_cbs"     : n,
         }
 
@@ -536,16 +536,16 @@ if st.session_state.get("resultado_comparacao"):
     rc        = st.session_state["resultado_comparacao"]
     grupos_c  = rc["grupos"]
     k_c       = rc["k"]
-    mp        = rc["min_pares"]
+    mp        = rc["min_cbs"]
     n_cbs     = rc["n_cbs"]
-    filtrados = [g for g in grupos_c if len(g["pares"]) >= mp]
-    total_p   = sum(len(g["pares"]) for g in grupos_c)
+    filtrados = [g for g in grupos_c if len(g["cbs"]) >= mp]
+    total_p   = sum(len(g.get("lista_cbs", [])) for g in grupos_c)
 
     st.subheader("📊 Resultado da comparação")
     cm1, cm2, cm3, cm4 = st.columns(4)
-    cm1.metric("Grupos únicos",          f"{len(grupos_c):,}")
-    cm2.metric(f"Total pares com {k_c} id.", f"{total_p:,}")
-    cm3.metric(f"Grupos com ≥{mp} pares",   f"{len(filtrados):,}")
+    cm1.metric("Grupos únicos",                f"{len(grupos_c):,}")
+    cm2.metric("Total membros", f"{total_p:,}")
+    cm3.metric(f"Grupos com ≥{mp} conjuntos",  f"{len(filtrados):,}")
     cm4.metric("CBs na base",            n_cbs)
 
     if not filtrados:
@@ -554,28 +554,26 @@ if st.session_state.get("resultado_comparacao"):
         larg = len(str(max(e for g in filtrados for e in g["elementos_comuns"])))
         for g_idx, grupo in enumerate(filtrados, start=1):
             chave  = grupo["elementos_comuns"]
-            pares  = grupo["pares"]
+            membros = grupo.get("lista_cbs", [])
             cbs    = sorted(grupo["cbs"])
             ch_str = "{" + ", ".join(str(x).zfill(larg) for x in chave) + "}"
             label  = (f"Grupo {g_idx} — {ch_str} "
-                      f"| {len(pares)} par(es) | {len(cbs)} CBs: {', '.join(cbs)}")
+                      f"| {len(cbs)} conjuntos: {', '.join(cbs)}")
 
             with st.expander(label, expanded=False):
-                for ni, ci, nj, cj in pares:
-                    st.markdown(f"**{ni} × {nj}**")
-                    for nome, conj in [(ni, ci), (nj, cj)]:
-                        partes = []
-                        larg2 = len(str(max(abs(int(e)) for e in conj.elementos)))
-                        for e in conj.elementos:
-                            s = str(int(e)).zfill(larg2)
-                            if int(e) in set(chave):
-                                partes.append(f"<span style='color:#e67e00;font-weight:bold'>{s}</span>")
-                            else:
-                                partes.append(s)
-                        st.markdown(
-                            f"**{nome}** = " + "{" + ", ".join(partes) + "}",
-                            unsafe_allow_html=True
-                        )
+                for nome, conj in grupo.get("lista_cbs", []):
+                    partes = []
+                    larg2 = len(str(max(abs(int(e)) for e in conj.elementos)))
+                    for e in conj.elementos:
+                        s = str(int(e)).zfill(larg2)
+                        if int(e) in set(chave):
+                            partes.append(f"<span style='color:#e67e00;font-weight:bold'>{s}</span>")
+                        else:
+                            partes.append(s)
+                    st.markdown(
+                        f"**{nome}** = " + "{" + ", ".join(partes) + "}",
+                        unsafe_allow_html=True
+                    )
 
 
 # ====================================================================== #
@@ -599,7 +597,7 @@ with col_nc1:
 with col_nc2:
     k_nova = st.number_input("Novo K", min_value=1, value=14, step=1, key="nova_comp_k")
 with col_nc3:
-    min_nova = st.number_input("≥ pares", min_value=1, value=2, step=1, key="nova_comp_min")
+    min_nova = st.number_input("≥ conjuntos", min_value=1, value=2, step=1, key="nova_comp_min")
 
 nova_comp = st.button("🔁 Comparar grupo", key="btn_nova_comp", use_container_width=False, type="primary")
 
@@ -622,11 +620,11 @@ if nova_comp:
             else:
                 n_f = len(cbs_filtrados)
                 with st.spinner(f"Comparando {n_f*(n_f-1)//2:,} pares entre {n_f} CBs..."):
-                    grupos_nova = comparar_cbs_entre_si(int(k_nova), cbs_filtrados)
+                    grupos_nova = agrupar_cbs_por_subconjunto(int(k_nova), cbs_filtrados, min_cbs=1)
                 st.session_state["resultado_nova_comp"] = {
                     "grupos"      : grupos_nova,
                     "k"           : int(k_nova),
-                    "min_pares"   : int(min_nova),
+                    "min_cbs"   : int(min_nova),
                     "n_filtrados" : n_f,
                     "cbs_nomes"   : [n for n, _ in cbs_filtrados],
                 }
@@ -637,19 +635,19 @@ if st.session_state.get("resultado_nova_comp"):
     rnc       = st.session_state["resultado_nova_comp"]
     grupos_nc = rnc["grupos"]
     k_nc      = rnc["k"]
-    mp_nc     = rnc["min_pares"]
+    mp_nc     = rnc["min_cbs"]
     n_f_nc    = rnc["n_filtrados"]
     cbs_nomes = rnc.get("cbs_nomes", [])
-    filtrados_nc = [g for g in grupos_nc if len(g["pares"]) >= mp_nc]
-    total_nc  = sum(len(g["pares"]) for g in grupos_nc)
+    filtrados_nc = [g for g in grupos_nc if len(g["cbs"]) >= mp_nc]
+    total_nc  = sum(len(g.get("lista_cbs", [])) for g in grupos_nc)
 
     st.subheader("📊 Resultado da nova comparação")
     st.markdown(f"**CBs selecionados ({n_f_nc}):** {', '.join(cbs_nomes)}")
     cn1, cn2, cn3, cn4 = st.columns(4)
     cn1.metric("CBs que contêm o grupo",    n_f_nc)
     cn2.metric("Grupos únicos encontrados",  f"{len(grupos_nc):,}")
-    cn3.metric(f"Total pares com {k_nc} id.", f"{total_nc:,}")
-    cn4.metric(f"Grupos com ≥{mp_nc} pares", f"{len(filtrados_nc):,}")
+    cn3.metric("Total membros", f"{total_nc:,}")
+    cn4.metric(f"Grupos com ≥{mp_nc} conjuntos", f"{len(filtrados_nc):,}")
 
     if not filtrados_nc:
         st.info("Nenhum grupo com esse critério.")
@@ -657,24 +655,29 @@ if st.session_state.get("resultado_nova_comp"):
         larg_nc = len(str(max(e for g in filtrados_nc for e in g["elementos_comuns"])))
         for g_idx, grupo in enumerate(filtrados_nc, start=1):
             chave  = grupo["elementos_comuns"]
-            pares  = grupo["pares"]
+            membros = grupo.get("lista_cbs", [])
             cbs    = sorted(grupo["cbs"])
             ch_str = "{" + ", ".join(str(x).zfill(larg_nc) for x in chave) + "}"
             label  = (f"Grupo {g_idx} — {ch_str} "
-                      f"| {len(pares)} par(es) | CBs: {', '.join(cbs)}")
+                      f"| {len(cbs)} conjuntos: {', '.join(cbs)}")
             with st.expander(label, expanded=False):
-                for ni, ci, nj, cj in pares:
-                    st.markdown(f"**{ni} × {nj}**")
-                    for nome, conj in [(ni, ci), (nj, cj)]:
-                        partes = []
-                        larg2  = len(str(max(abs(int(e)) for e in conj.elementos)))
-                        for e in conj.elementos:
-                            s = str(int(e)).zfill(larg2)
-                            if int(e) in set(chave):
-                                partes.append(f"<span style='color:#e67e00;font-weight:bold'>{s}</span>")
-                            else:
-                                partes.append(s)
-                        st.markdown(
-                            f"**{nome}** = " + "{" + ", ".join(partes) + "}",
-                            unsafe_allow_html=True
-                        )
+                # compatível com par-a-par (pares) e subconjuntos (lista_cbs)
+                if pares and isinstance(pares[0], tuple) and len(pares[0]) == 4:
+                    membros = list({n: c for n, c, _, _ in pares}.items()) +                               list({n: c for _, _, n, c in pares}.items())
+                    membros = list({n: c for n, c in membros}.items())
+                else:
+                    membros = pares  # já é [(nome, conj)]
+
+                for nome, conj in membros:
+                    partes = []
+                    larg2  = len(str(max(abs(int(e)) for e in conj.elementos)))
+                    for e in conj.elementos:
+                        s = str(int(e)).zfill(larg2)
+                        if int(e) in set(chave):
+                            partes.append(f"<span style='color:#e67e00;font-weight:bold'>{s}</span>")
+                        else:
+                            partes.append(s)
+                    st.markdown(
+                        f"**{nome}** = " + "{" + ", ".join(partes) + "}",
+                        unsafe_allow_html=True
+                    )
